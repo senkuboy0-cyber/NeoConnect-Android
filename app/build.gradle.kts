@@ -68,9 +68,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.navigation:navigation-compose:2.7.4")
     
-    // WebRTC & Socket (Google Maven থেকে স্টেবল ভার্সন)
+    // WebRTC & Socket (JitPack থেকে সঠিক ভার্সন)
     implementation("io.socket:socket.io-client:2.1.0")
-    implementation("org.webrtc:google-webrtc:1.0.30444")
+    implementation("com.github.webrtc-sdk:android:125.6422.06")
     
     // Debug
     debugImplementation("androidx.compose.ui:ui-tooling")
