@@ -38,6 +38,7 @@ fun HomeScreen(onJoinCall: (String, Boolean) -> Unit) {
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
+            
             AnimatedVisibility(visible = isVisible, enter = fadeIn(tween(1000)) + slideInVertically(tween(1000)) { -it }) {
                 Text(text = "NeoConnect", fontSize = 42.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
@@ -65,12 +66,14 @@ fun HomeScreen(onJoinCall: (String, Boolean) -> Unit) {
                         label = { Text("Enter Room ID", color = Color.White) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp),
-                        colors = TextFieldDefaults.outlinedTextFieldColors(
-                            focusedBorderColor = Color.Cyan,
-                            unfocusedBorderColor = Color.Gray,
-                            cursorColor = Color.Cyan,
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
+                            cursorColor = Color.Cyan,
+                            focusedBorderColor = Color.Cyan,
+                            unfocusedBorderColor = Color.Gray,
                             focusedLabelColor = Color.Cyan
                         ),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),

@@ -1,6 +1,7 @@
 package com.neoconnect.app.ui.screens
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
@@ -9,6 +10,7 @@ import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -34,7 +36,6 @@ import androidx.core.content.ContextCompat
 import com.neoconnect.app.webrtc.CallManager
 import kotlinx.coroutines.delay
 import org.webrtc.SurfaceViewRenderer
-import org.webrtc.VideoTrack
 import java.util.concurrent.TimeUnit
 
 data class VideoFilter(val name: String, val colorCode: String)
@@ -93,7 +94,7 @@ fun CallScreen(roomId: String, isVideoCall: Boolean, onCallEnd: () -> Unit) {
     LaunchedEffect(isCallConnected) { if (isCallConnected) while (true) { delay(1000L); callDuration++ } }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        if (!isVideoCall || !isRemoteVideoAdded) { Box(modifier = Modifier.fillMaxSize().background(Color.Black)) }
+        if (!isVideoCall || !isRemoteVideoAdded) { Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) }
         
         if (isVideoCall) {
             AndroidView(factory = { remoteView }, modifier = Modifier.fillMaxSize())
