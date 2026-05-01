@@ -67,8 +67,10 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.navigation:navigation-compose:2.7.4")
+    // এই লাইনটি আইকন এরর ঠিক করবে
+    implementation("androidx.compose.material:material-icons-extended")
     
-    // WebRTC & Socket (Stream WebRTC for Android)
+    // WebRTC & Socket
     implementation("io.socket:socket.io-client:2.1.0")
     implementation("io.getstream:stream-webrtc-android:1.3.10")
     
