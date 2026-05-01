@@ -183,14 +183,14 @@ class CallManager {
                 audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                     .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION).build())
                     .build()
-                audioManager?.requestAudioFocus(audioFocusRequest!!)
+                audioManager.requestAudioFocus(audioFocusRequest!!)
             } else {
-                audioFocusRequest?.let { audioManager?.abandonAudioFocusRequest(it) }
+                audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
             }
         } else {
             @Suppress("DEPRECATION")
-            if (enable) audioManager?.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN)
-            else audioManager?.abandonAudioFocus(null)
+            if (enable) audioManager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN)
+            else audioManager.abandonAudioFocus(null)
         }
     }
 
