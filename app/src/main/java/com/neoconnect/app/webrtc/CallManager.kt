@@ -180,6 +180,8 @@ class CallManager(private val context: Context) {
             override fun onRemoveStream(stream: MediaStream?) {}
             override fun onDataChannel(channel: DataChannel?) {}
             override fun onRenegotiationNeeded() {}
+            // এই মেথডটি আগে মিসিং ছিল, এটি যোগ করা হয়েছে
+            override fun onIceConnectionReceivingChange(receiving: Boolean) {}
         })
 
         localStream?.let { stream ->
