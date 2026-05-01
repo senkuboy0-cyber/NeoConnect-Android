@@ -1,14 +1,19 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
+<resources xmlns:tools="http://schemas.android.com/tools">    
+    <!-- অ্যাপের মূল থিম -->
     <style name="Theme.NeoConnect" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- স্প্যাশ স্ক্রিনের জন্য ব্যাকগ্রাউন্ড কালার -->
-        <item name="android:windowBackground">@color/splash_bg</item>
-        <!-- Status Bar এবং Navigation Bar কালার -->
         <item name="android:statusBarColor">@color/splash_bg</item>
         <item name="android:navigationBarColor">@color/splash_bg</item>
-        
-        <!-- Android 12+ এর জন্য ডিফল্ট লোগো আইকন বন্ধ করে দিচ্ছি -->
-        <item name="android:windowSplashScreenAnimatedIcon" tools:targetApi="s">@android:color/transparent</item>
-        <item name="android:windowSplashScreenBackground" tools:targetApi="s">@color/splash_bg</item>
+    </style>
+
+    <!-- স্প্ল্যাশ স্ক্রিনের জন্য আলাদা থিম (এটাই ম্যাজিক করবে) -->
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <!-- ব্যাকগ্রাউন্ড কালার -->
+        <item name="windowSplashScreenBackground">@color/splash_bg</item>        
+        <!-- লোগো আইকন (এটা একদম শুরুতেই দেখাবে) -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>        
+        <!-- অ্যানিমেশনের সময় (মিলিসেকেন্ড) -->
+        <item name="android:windowSplashScreenAnimationDuration" tools:targetApi="s">1000</item>        
+        <!-- স্প্ল্যাশ শেষে অ্যাপের আসল থিমে চলে যাবে -->
+        <item name="postSplashScreenTheme">@style/Theme.NeoConnect</item>
     </style>
 </resources>

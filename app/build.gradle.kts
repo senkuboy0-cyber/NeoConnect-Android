@@ -71,6 +71,8 @@ dependencies {
     implementation("com.google.android.material:material:1.11.0")
     // Icons
     implementation("androidx.compose.material:material-icons-extended")
+    // Splash Screen API
+    implementation("androidx.core:core-splashscreen:1.0.1")
     
     // WebRTC & Socket
     implementation("io.socket:socket.io-client:2.1.0")

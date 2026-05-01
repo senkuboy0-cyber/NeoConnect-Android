@@ -3,6 +3,7 @@ package com.neoconnect.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -15,7 +16,10 @@ import com.neoconnect.app.ui.theme.NeoConnectTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // এই লাইনটি super.onCreate এর আগে হতে হবে
+        val splashScreen = installSplashScreen()        
         super.onCreate(savedInstanceState)
+        
         setContent {
             NeoConnectTheme {
                 val navController = rememberNavController()
