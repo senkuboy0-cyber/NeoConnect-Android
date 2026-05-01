@@ -12,7 +12,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -51,9 +50,9 @@ fun CallScreen(roomId: String, isVideoCall: Boolean, onCallEnd: () -> Unit) {
     var isCallConnected by remember { mutableStateOf(false) }
     var callDuration by remember { mutableStateOf(0L) }
     
+    // Menu State
     var showMenu by remember { mutableStateOf(false) }
-    var selectedFilter by remember { mutableStateOf("Normal") }
-    
+    var selectedFilter by remember { mutableStateOf("Normal") }    
     val filters = listOf(
         VideoFilter("Normal", "#FFFFFF"),
         VideoFilter("Cool", "#BBDEFB"),
@@ -93,17 +92,18 @@ fun CallScreen(roomId: String, isVideoCall: Boolean, onCallEnd: () -> Unit) {
 
     LaunchedEffect(isCallConnected) { if (isCallConnected) while (true) { delay(1000L); callDuration++ } }
 
+    // Main Layout
     Box(modifier = Modifier.fillMaxSize()) {
-        if (!isVideoCall || !isRemoteVideoAdded) { Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) }
         
+        // 1. Background & Video Views
+        if (!isVideoCall || !isRemoteVideoAdded) { Box(modifier = Modifier.fillMaxSize().background(materialTheme.colorScheme.background)) }        
         if (isVideoCall) {
             AndroidView(factory = { remoteView }, modifier = Modifier.fillMaxSize())
-            if (!isRemoteVideoAdded) { CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = Color.Cyan) }
-            AndroidView(factory = { localView }, modifier = Modifier
-                .align(Alignment.TopEnd).padding(16.dp).size(120.dp, 180.dp)
-                .clip(RoundedCornerShape(16.dp)).clickable { callManager.switchCamera() })
+            if (!isRemoteVideoAdded) { CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = materialTheme.colorScheme.primary) }
+            AndroidView(factory = { localView }, modifier = Modifier.align(Alignment.TopEnd).padding(16.dp).size(120.dp, 180.dp).clip(RoundedCornerShape(16.dp)).clickable { callManager.switchCamera() })
         }
 
+        // Audio UI
         if (!isVideoCall) {
             Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 Icon(Icons.Default.Person, "Audio", Modifier.size(120.dp), Color.White)
@@ -112,66 +112,67 @@ fun CallScreen(roomId: String, isVideoCall: Boolean, onCallEnd: () -> Unit) {
             }
         }
 
+        // Timer
         if (isVideoCall && callDuration > 0L) {
-            Text(formatDuration(callDuration), color = Color.White, modifier = Modifier
-                .align(Alignment.TopCenter).padding(top = 50.dp)
-                .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp)).padding(8.dp))
+            Text(formatDuration(callDuration), color = Color.White, modifier = Modifier.align(Alignment.TopCenter).padding(top = 50.dp).background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp)).padding(8.dp))
         }
 
-        ControlBar(
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 40.dp),
-            isMuted = isMuted, isVideoOff = isVideoOff, isSpeakerOn = isSpeakerOn, isVideoCall = isVideoCall,
-            onMuteToggle = { isMuted = !isMuted; callManager.toggleMute(isMuted) },
-            onVideoToggle = { isVideoOff = !isVideoOff; callManager.toggleCamera(isVideoOff) },
-            onSpeakerToggle = { isSpeakerOn = !isSpeakerOn; callManager.enableSpeaker(isSpeakerOn) },
-            onEndCall = { callManager.endCall(); onCallEnd() },
-            onMenuClicked = { showMenu = true }
-        )
-
-        // Custom Animated Bottom Menu
-        AnimatedVisibility(
-            visible = showMenu,
-            enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(300)),
-            exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(200)),
-            modifier = Modifier.align(Alignment.BottomCenter)
+        // 2. Animated Menu (Placed BEFORE Controls to be behind them logically but visually above video)
+        // Using a specific layout to position it ABOVE the controls
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 130.dp) // Distance from bottom to sit above control bar
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF1E1E1E), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                    .padding(16.dp)
+            AnimatedVisibility(
+                visible = showMenu && isVideoCall, // Only show if VideoCall AND menu toggled
+                enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(300)) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(200)) + fadeOut()
             ) {
-                Column {
+                Column(
+                    modifier = Modifier
+                        .width(300.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xFF1E1E1E))
+                        .padding(16.dp)
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Settings", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.clickable { showMenu = false })
+                        Text("Settings", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray, modifier = Modifier.size(20.dp).clickable { showMenu = false })
                     }
                     
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("Video Filters", color = Color.Cyan, fontSize = 16.sp)
                     Spacer(modifier = Modifier.height(12.dp))
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text("Video Filters", color = Color.Cyan, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(8.dp))                    
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         items(filters) { filter ->
                             FilterItem(filter = filter, isSelected = selectedFilter == filter.name) {
                                 selectedFilter = filter.name
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.height(32.dp))
                 }
             }
         }
-        
-        if (showMenu) {
-            Box(modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.5f))
-                .clickable { showMenu = false })
-        }
+
+        // 3. Controls (Always on Top)
+        ControlBar(
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 40.dp),
+            isMuted = isMuted, 
+            isVideoOff = isVideoOff, 
+            isSpeakerOn = isSpeakerOn, 
+            isVideoCall = isVideoCall,
+            onMuteToggle = { isMuted = !isMuted; callManager.toggleMute(isMuted) },
+            onVideoToggle = { isVideoOff = !isVideoOff; callManager.toggleCamera(isVideoOff) },
+            onSpeakerToggle = { isSpeakerOn = !isSpeakerOn; callManager.enableSpeaker(isSpeakerOn) },
+            onEndCall = { callManager.endCall(); onCallEnd() },
+            onMenuClicked = { showMenu = !showMenu }, // Toggle menu
+            showMenuButton = isVideoCall // ONLY show button if Video Call
+        )
     }
 
     DisposableEffect(Unit) {
@@ -187,21 +188,48 @@ fun CallScreen(roomId: String, isVideoCall: Boolean, onCallEnd: () -> Unit) {
 fun FilterItem(filter: VideoFilter, isSelected: Boolean, onClick: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { onClick() }) {
         Box(
-            modifier = Modifier.size(60.dp).clip(CircleShape).background(Color(android.graphics.Color.parseColor(filter.colorCode)))
+            modifier = Modifier.size(50.dp).clip(CircleShape).background(Color(android.graphics.Color.parseColor(filter.colorCode)))
                 .then(if (isSelected) Modifier.border(3.dp, Color.Cyan, CircleShape) else Modifier)
         )
         Spacer(modifier = Modifier.height(4.dp))
-        Text(filter.name, color = Color.White, fontSize = 12.sp)
+        Text(filter.name, color = Color.White, fontSize = 11.sp)
     }
 }
 
 @Composable
-fun ControlBar(modifier: Modifier, isMuted: Boolean, isVideoOff: Boolean, isSpeakerOn: Boolean, isVideoCall: Boolean, onMuteToggle: () -> Unit, onVideoToggle: () -> Unit, onSpeakerToggle: () -> Unit, onEndCall: () -> Unit, onMenuClicked: () -> Unit) {
-    Row(modifier = modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.8f)).padding(horizontal = 12.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+fun ControlBar(
+    modifier: Modifier, 
+    isMuted: Boolean, 
+    isVideoOff: Boolean, 
+    isSpeakerOn: Boolean, 
+    isVideoCall: Boolean, 
+    onMuteToggle: () -> Unit, 
+    onVideoToggle: () -> Unit, 
+    onSpeakerToggle: () -> Unit, 
+    onEndCall: () -> Unit, 
+    onMenuClicked: () -> Unit,
+    showMenuButton: Boolean // New Parameter
+) {
+    Row(
+        modifier = modifier.clip(RoundedCornerShape(50)).background(materialTheme.colorScheme.surface.copy(alpha = 0.85f)).padding(horizontal = 12.dp, vertical = 12.dp), 
+        horizontalArrangement = Arrangement.spacedBy(12.dp), 
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         ControlButton(icon = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic, background = if (isMuted) Color.Red else Color.DarkGray, onClick = onMuteToggle)
-        ControlButton(icon = if (isSpeakerOn) Icons.Default.VolumeUp else Icons.Default.VolumeDown, background = if (isSpeakerOn) Color(0xFF4CAF50) else Color.DarkGray, onClick = onSpeakerToggle)
-        if (isVideoCall) { ControlButton(icon = if (isVideoOff) Icons.Default.VideocamOff else Icons.Default.Videocam, background = if (isVideoOff) Color.Red else Color.DarkGray, onClick = onVideoToggle) }
-        ControlButton(icon = Icons.Default.MoreVert, background = Color.DarkGray, onClick = onMenuClicked)
+        ControlButton(icon = if (isSpeakerOn) Icons.Default.VolumeUp else Icons.Default.VolumeDown, background = if (isSpeakerOn) Color(0xFF4CAF50) else Color.DarkGray, onClick = onSpeakerToggle)        
+        if (isVideoCall) { 
+            ControlButton(icon = if (isVideoOff) Icons.Default.VideocamOff else Icons.Default.Videocam, background = if (isVideoOff) Color.Red else Color.DarkGray, onClick = onVideoToggle) 
+        }
+
+        // Horizontal 3-Dot Menu Button (Only for Video Call)
+        if (showMenuButton) {
+            ControlButton(
+                icon = Icons.Default.MoreHoriz, // Horizontal Dots (Left-Right)
+                background = Color.DarkGray, 
+                onClick = onMenuClicked
+            )
+        }
+        
         ControlButton(icon = Icons.Default.CallEnd, background = Color.Red, onClick = onEndCall)
     }
 }
