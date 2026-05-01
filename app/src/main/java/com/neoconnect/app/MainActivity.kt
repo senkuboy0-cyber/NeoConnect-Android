@@ -5,11 +5,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
-import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
 import com.neoconnect.app.ui.screens.CallScreen
 import com.neoconnect.app.ui.screens.HomeScreen
 import com.neoconnect.app.ui.screens.SplashScreen
@@ -38,16 +36,15 @@ fun SetupNavigation(navController: NavHostController) {
             }
         }
         composable("home") {
-            HomeScreen { roomId ->
-                navController.navigate("call/$roomId")
+            HomeScreen { roomId, isVideoCall ->
+                navController.navigate("call/$roomId/$isVideoCall")
             }
         }
-        composable(
-            route = "call/{roomId}",
-            arguments = listOf(navArgument("roomId") { type = NavType.StringType })
-        ) { backStackEntry ->
+        composable("call/{roomId}/{isVideoCall}") { backStackEntry ->
             val roomId = backStackEntry.arguments?.getString("roomId") ?: ""
-            CallScreen(roomId = roomId) {
+            val isVideoCall = backStackEntry.arguments?.getString("isVideoCall")?.toBoolean() ?: true
+            
+            CallScreen(roomId = roomId, isVideoCall = isVideoCall) {
                 navController.navigate("home") {
                     popUpTo("home") { inclusive = true }
                 }

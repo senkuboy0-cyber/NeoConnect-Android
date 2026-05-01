@@ -23,7 +23,7 @@ class CallManager(private val context: Context) {
     
     private var audioManager: AudioManager? = null
     private var audioFocusRequest: AudioFocusRequest? = null
-    private var eglBase: EglBase? = null
+    var eglBase: EglBase? = null // Public করা হলো যাতে UI থেকে access করা যায়
 
     var onRemoteStream: ((VideoTrack) -> Unit)? = null
     var onCallEnded: (() -> Unit)? = null
@@ -55,7 +55,7 @@ class CallManager(private val context: Context) {
     }
 
     @SuppressLint("MissingPermission")
-    fun startLocalStream(localView: SurfaceViewRenderer) {
+    fun startLocalStream(localView: SurfaceViewRenderer, isVideoCall: Boolean = true) {
         val ctx = eglBase?.eglBaseContext ?: return
         localView.init(ctx, null)
         localView.setZOrderMediaOverlay(true)
@@ -66,21 +66,26 @@ class CallManager(private val context: Context) {
         val audioSource = factory?.createAudioSource(MediaConstraints())
         localAudioTrack = factory?.createAudioTrack("audio0", audioSource)
         
-        // Video Source & Track
-        val videoSource = factory?.createVideoSource(false)
-        videoCapturer = createCameraCapturer()
-        videoCapturer?.initialize(surfaceHelper, context, videoSource?.capturerObserver)
-        videoCapturer?.startCapture(1280, 720, 30)
-        
-        localVideoTrack = factory?.createVideoTrack("video0", videoSource)
-        localVideoTrack?.addSink(localView)
+        if (isVideoCall) {
+            // Video Source & Track
+            val videoSource = factory?.createVideoSource(false)
+            videoCapturer = createCameraCapturer()
+            videoCapturer?.initialize(surfaceHelper, context, videoSource?.capturerObserver)
+            videoCapturer?.startCapture(1280, 720, 30)
+            
+            localVideoTrack = factory?.createVideoTrack("video0", videoSource)
+            localVideoTrack?.addSink(localView)
+        }
         
         // Create Stream
         localStream = factory?.createLocalMediaStream("stream0")
         localStream?.addTrack(localAudioTrack)
-        localStream?.addTrack(localVideoTrack)
+        if (isVideoCall) {
+            localStream?.addTrack(localVideoTrack)
+        }
         
         setAudioFocus(true)
+        enableSpeaker(true) // Video Call এ default Speaker On
     }
 
     private fun createCameraCapturer(): VideoCapturer? {
@@ -180,7 +185,6 @@ class CallManager(private val context: Context) {
             override fun onRemoveStream(stream: MediaStream?) {}
             override fun onDataChannel(channel: DataChannel?) {}
             override fun onRenegotiationNeeded() {}
-            // এই মেথডটি আগে মিসিং ছিল, এটি যোগ করা হয়েছে
             override fun onIceConnectionReceivingChange(receiving: Boolean) {}
         })
 
@@ -227,6 +231,12 @@ class CallManager(private val context: Context) {
     fun toggleMute(mute: Boolean) { localAudioTrack?.setEnabled(!mute) }
     fun toggleCamera(off: Boolean) { localVideoTrack?.setEnabled(!off) }
     fun switchCamera() { (videoCapturer as? CameraVideoCapturer)?.switchCamera(null) }
+    
+    // Speaker Control
+    fun enableSpeaker(enable: Boolean) {
+        audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
+        audioManager?.isSpeakerphoneOn = enable
+    }
 
     private fun setAudioFocus(enable: Boolean) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -241,10 +251,13 @@ class CallManager(private val context: Context) {
             if (enable) audioManager?.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN)
             else audioManager?.abandonAudioFocus(null)
         }
+        // Android 9 Fix
+        audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
     }
 
     fun endCall() {
         setAudioFocus(false)
+        enableSpeaker(false)
         videoCapturer?.stopCapture()
         videoCapturer?.dispose()
         peerConnection?.close()

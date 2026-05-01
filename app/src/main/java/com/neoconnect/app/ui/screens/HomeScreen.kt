@@ -16,7 +16,9 @@ import com.neoconnect.app.ui.theme.NeoPrimary
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(onJoinCall: (String) -> Unit) {
+fun HomeScreen(
+    onJoinCall: (String, Boolean) -> Unit // Changed: (roomId, isVideoCall)
+) {
     var roomId by remember { mutableStateOf("") }
 
     Box(
@@ -28,9 +30,10 @@ fun HomeScreen(onJoinCall: (String) -> Unit) {
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = "Create or Join a Meeting",
+                text = "NeoConnect",
                 style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onBackground
+                color = NeoPrimary,
+                fontSize = 32.sp
             )
             
             Spacer(modifier = Modifier.height(32.dp))
@@ -51,9 +54,10 @@ fun HomeScreen(onJoinCall: (String) -> Unit) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            // Video Call Button
             Button(
                 onClick = { 
-                    if (roomId.isNotBlank()) onJoinCall(roomId) 
+                    if (roomId.isNotBlank()) onJoinCall(roomId, true) 
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -61,7 +65,27 @@ fun HomeScreen(onJoinCall: (String) -> Unit) {
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = NeoPrimary)
             ) {
-                Text(text = "Join Now", fontSize = 18.sp)
+                Icon(imageVector = Icons.Default.Videocam, contentDescription = null, modifier = Modifier.size(24.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(text = "Join Video Call", fontSize = 18.sp)
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Audio Call Button
+            Button(
+                onClick = { 
+                    if (roomId.isNotBlank()) onJoinCall(roomId, false) 
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+            ) {
+                Icon(imageVector = Icons.Default.Call, contentDescription = null, modifier = Modifier.size(24.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(text = "Join Audio Call", fontSize = 18.sp)
             }
             
             Spacer(modifier = Modifier.height(16.dp))

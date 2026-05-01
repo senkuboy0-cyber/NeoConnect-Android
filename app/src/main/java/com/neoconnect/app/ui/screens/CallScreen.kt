@@ -2,6 +2,7 @@ package com.neoconnect.app.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.media.projection.MediaProjectionManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -10,11 +11,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CallEnd
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material.icons.filled.VideocamOff
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,6 +29,7 @@ import org.webrtc.VideoTrack
 @Composable
 fun CallScreen(
     roomId: String,
+    isVideoCall: Boolean = true, // ভিডিও না অডিও কল সেটা বোঝার জন্য
     onCallEnd: () -> Unit
 ) {
     val context = LocalContext.current
@@ -40,6 +38,7 @@ fun CallScreen(
     var isMuted by remember { mutableStateOf(false) }
     var isVideoOff by remember { mutableStateOf(false) }
     var isRemoteVideoAdded by remember { mutableStateOf(false) }
+    var isSpeakerOn by remember { mutableStateOf(true) } // Default Speaker On
 
     // Views
     val localView = remember { SurfaceViewRenderer(context) }
@@ -48,25 +47,33 @@ fun CallScreen(
     // Manager
     val callManager = remember { CallManager(context) }
 
+    // Screen Share Logic (Simplified)
+    val mediaProjectionManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+    
     // Permissions
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val granted = permissions.values.all { it }
         if (granted) {
-            initCall(callManager, localView, remoteView, roomId, onCallEnd) { 
+            initCall(callManager, localView, remoteView, roomId, isVideoCall, onCallEnd) { 
                 isRemoteVideoAdded = true 
             }
         }
     }
 
     LaunchedEffect(Unit) {
+        // Initialize Remote View with Shared EglContext
+        callManager.eglBase?.eglBaseContext?.let {
+            remoteView.init(it, null)
+        }
+        
         val permissions = arrayOf(
             Manifest.permission.CAMERA,
             Manifest.permission.RECORD_AUDIO
         )
         if (permissions.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) {
-            initCall(callManager, localView, remoteView, roomId, onCallEnd) { 
+            initCall(callManager, localView, remoteView, roomId, isVideoCall, onCallEnd) { 
                 isRemoteVideoAdded = true 
             }
         } else {
@@ -76,33 +83,51 @@ fun CallScreen(
 
     // UI Layout
     Box(modifier = Modifier.fillMaxSize()) {
-        // Remote Video (Full Screen)
-        if (isRemoteVideoAdded) {
+        // Remote Video (Full Screen) - Only show if Video Call
+        if (isVideoCall) {
+            if (isRemoteVideoAdded) {
+                AndroidView(
+                    factory = { remoteView },
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                // Waiting UI
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                }
+            }
+
+            // Local Video (PiP) - Only show if Video Call
             AndroidView(
-                factory = { remoteView },
-                modifier = Modifier.fillMaxSize()
+                factory = { localView },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp)
+                    .size(120.dp, 180.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable { callManager.switchCamera() }
             )
         } else {
+            // Audio Call UI (Only Icon in Center)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                Icon(
+                    imageVector = Icons.Default.Person, // Use Person icon
+                    contentDescription = "Audio Call",
+                    modifier = Modifier.size(120.dp),
+                    tint = Color.White
+                )
             }
         }
-
-        // Local Video (PiP)
-        AndroidView(
-            factory = { localView },
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(16.dp)
-                .size(120.dp, 180.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .clickable { callManager.switchCamera() }
-        )
 
         // Controls
         ControlBar(
@@ -111,6 +136,8 @@ fun CallScreen(
                 .padding(bottom = 40.dp),
             isMuted = isMuted,
             isVideoOff = isVideoOff,
+            isSpeakerOn = isSpeakerOn,
+            isVideoCall = isVideoCall,
             onMuteToggle = {
                 isMuted = !isMuted
                 callManager.toggleMute(isMuted)
@@ -118,6 +145,10 @@ fun CallScreen(
             onVideoToggle = {
                 isVideoOff = !isVideoOff
                 callManager.toggleCamera(isVideoOff)
+            },
+            onSpeakerToggle = {
+                isSpeakerOn = !isSpeakerOn
+                callManager.enableSpeaker(isSpeakerOn)
             },
             onEndCall = {
                 callManager.endCall()
@@ -140,14 +171,16 @@ private fun initCall(
     localView: SurfaceViewRenderer,
     remoteView: SurfaceViewRenderer,
     roomId: String,
+    isVideoCall: Boolean,
     onEnd: () -> Unit,
     onRemote: () -> Unit
 ) {
     manager.init()
-    manager.startLocalStream(localView)
+    manager.startLocalStream(localView, isVideoCall)
     manager.joinRoom(roomId)
     
     manager.onRemoteStream = { track ->
+        // Ensure we add sink on UI thread and remote view is ready
         track.addSink(remoteView)
         onRemote()
     }
@@ -159,28 +192,45 @@ fun ControlBar(
     modifier: Modifier = Modifier,
     isMuted: Boolean,
     isVideoOff: Boolean,
+    isSpeakerOn: Boolean,
+    isVideoCall: Boolean,
     onMuteToggle: () -> Unit,
     onVideoToggle: () -> Unit,
+    onSpeakerToggle: () -> Unit,
     onEndCall: () -> Unit
 ) {
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(50))
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
-            .padding(horizontal = 24.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(24.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp), // Reduced padding
+        horizontalArrangement = Arrangement.spacedBy(16.dp), // Reduced space
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Mute
         ControlButton(
             icon = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
             background = if (isMuted) Color.Red else Color.DarkGray,
             onClick = onMuteToggle
         )
+        
+        // Speaker (New)
         ControlButton(
-            icon = if (isVideoOff) Icons.Default.VideocamOff else Icons.Default.Videocam,
-            background = if (isVideoOff) Color.Red else Color.DarkGray,
-            onClick = onVideoToggle
+            icon = if (isSpeakerOn) Icons.Default.VolumeUp else Icons.Default.VolumeDown,
+            background = if (isSpeakerOn) Color(0xFF4CAF50) else Color.DarkGray, // Green if on
+            onClick = onSpeakerToggle
         )
+
+        // Video (Only for video call)
+        if (isVideoCall) {
+            ControlButton(
+                icon = if (isVideoOff) Icons.Default.VideocamOff else Icons.Default.Videocam,
+                background = if (isVideoOff) Color.Red else Color.DarkGray,
+                onClick = onVideoToggle
+            )
+        }
+
+        // End Call
         ControlButton(
             icon = Icons.Default.CallEnd,
             background = Color.Red,
@@ -197,7 +247,7 @@ fun ControlButton(
 ) {
     Box(
         modifier = Modifier
-            .size(56.dp)
+            .size(50.dp) // Slightly smaller
             .clip(CircleShape)
             .background(background)
             .clickable { onClick() },
@@ -207,7 +257,7 @@ fun ControlButton(
             imageVector = icon,
             contentDescription = null,
             tint = Color.White,
-            modifier = Modifier.size(28.dp)
+            modifier = Modifier.size(24.dp)
         )
     }
 }
