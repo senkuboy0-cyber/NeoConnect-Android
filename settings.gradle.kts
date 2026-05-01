@@ -10,7 +10,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // JitPack আর লাগবে না
+        // JitPack লাগবে না, কারণ stream-webrtc-android Maven Central এ আছে
     }
 }
 
