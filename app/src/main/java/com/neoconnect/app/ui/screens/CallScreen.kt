@@ -1,11 +1,16 @@
 package com.neoconnect.app.ui.screens
 
-import android.view.SurfaceView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CallEnd
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -15,7 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.neoconnect.app.webrtc.CallManager
-import com.neoconnect.app.ui.theme.NeoPrimary
+import com.neoconnect.app.webrtc.SurfaceViewRenderer
 
 @Composable
 fun CallScreen(
@@ -26,11 +31,7 @@ fun CallScreen(
     var isVideoOff by remember { mutableStateOf(false) }
     
     val manager = remember {
-        CallManager().apply {
-            joinRoom(roomId)
-            onRemoteStream = { _ -> }
-            onCallEnded = { onEnd() }
-        }
+        CallManager()
     }
 
     Box(
@@ -41,8 +42,13 @@ fun CallScreen(
         // Remote Video View
         AndroidView(
             factory = { context ->
-                SurfaceView(context).also {
-                    manager.init(it, context)
+                SurfaceViewRenderer(context).also { renderer ->
+                    manager.init()
+                    manager.onRemoteStream = { track ->
+                        track.addSink(renderer)
+                    }
+                    manager.onCallEnded = { onEnd() }
+                    manager.joinRoom(roomId)
                 }
             },
             modifier = Modifier.fillMaxSize()
@@ -51,8 +57,8 @@ fun CallScreen(
         // Local Video View
         AndroidView(
             factory = { context ->
-                SurfaceView(context).also {
-                    manager.initLocal(it)
+                SurfaceViewRenderer(context).also { renderer ->
+                    manager.startLocalStream(context, renderer)
                 }
             },
             modifier = Modifier
@@ -61,7 +67,6 @@ fun CallScreen(
                 .size(120.dp, 160.dp)
                 .clip(RoundedCornerShape(12.dp))
         )
-
 
         // Control Bar
         ControlBar(
@@ -104,15 +109,18 @@ fun ControlBar(
         verticalAlignment = Alignment.CenterVertically
     ) {
         ControlButton(
-            isActive = isMuted,
+            icon = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
+            background = if (isMuted) Color.Red else Color.DarkGray,
             onClick = onMuteToggle
         )
         ControlButton(
-            isActive = isVideoOff,
+            icon = if (isVideoOff) Icons.Default.VideocamOff else Icons.Default.Videocam,
+            background = if (isVideoOff) Color.Red else Color.DarkGray,
             onClick = onVideoToggle
         )
         ControlButton(
-            isEndCall = true,
+            icon = Icons.Default.CallEnd,
+            background = Color.Red,
             onClick = onEndCall
         )
     }
@@ -120,22 +128,10 @@ fun ControlBar(
 
 @Composable
 fun ControlButton(
-    isActive: Boolean = false,
-    isEndCall: Boolean = false,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    background: Color,
     onClick: () -> Unit
 ) {
-    val background = when {
-        isEndCall -> Color.Red
-        isActive -> Color.Red
-        else -> Color.DarkGray
-    }
-    
-    val contentDescription = when {
-        isEndCall -> "End Call"
-        isActive -> "Unmute"
-        else -> "Mute"
-    }
-
     Box(
         modifier = Modifier
             .size(56.dp)
@@ -144,13 +140,11 @@ fun ControlButton(
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = when {
-                isEndCall -> "X"
-                isActive -> "X"
-                else -> "O"
-            },
-            color = Color.White
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(28.dp)
         )
     }
 }
