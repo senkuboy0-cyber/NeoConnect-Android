@@ -1,7 +1,6 @@
 package com.neoconnect.app.ui.screens
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,10 +18,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.neoconnect.app.webrtc.CallManager
 import kotlinx.coroutines.delay
 import org.webrtc.SurfaceViewRenderer
@@ -36,76 +38,118 @@ fun CallScreen(
     onCallEnd: () -> Unit
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     
     // State
     var isMuted by remember { mutableStateOf(false) }
     var isVideoOff by remember { mutableStateOf(false) }
     var isRemoteVideoAdded by remember { mutableStateOf(false) }
-    var isSpeakerOn by remember { mutableStateOf(isVideoCall) } // Video hole true, Audio hole false
+    var isSpeakerOn by remember { mutableStateOf(isVideoCall) }
     var callDuration by remember { mutableStateOf(0L) }
-    
-    // Views
-    val localView = remember { SurfaceViewRenderer(context) }
-    val remoteView = remember { SurfaceViewRenderer(context) }
-    
-    // Manager
+    var hasPermissions by remember { mutableStateOf(false) }
+
+    // Manager - Initialized once
     val callManager = remember { CallManager(context) }
 
+    // Create Views using remember (Created on UI Thread)
+    val localView = remember { SurfaceViewRenderer(context) }
+    val remoteView = remember { SurfaceViewRenderer(context) }
+
     // Timer Logic
-    LaunchedEffect(key1 = callManager.onConnected) {
-        if (isRemoteVideoAdded || true) { // Start timer when connected
-            while (true) {
-                delay(1000L)
-                callDuration++
-            }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1000L)
+            if (hasPermissions) callDuration++
         }
     }
 
-    // Permissions
+    // Permission Launcher
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val granted = permissions.values.all { it }
         if (granted) {
-            initializeAndStartCall(callManager, localView, remoteView, roomId, isVideoCall, onCallEnd) { 
-                isRemoteVideoAdded = true 
-            }
+            hasPermissions = true
         }
     }
 
-    LaunchedEffect(Unit) {
-        val permissions = arrayOf(
-            Manifest.permission.CAMERA,
-            Manifest.permission.RECORD_AUDIO
-        )
-        if (permissions.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) {
-            initializeAndStartCall(callManager, localView, remoteView, roomId, isVideoCall, onCallEnd) { 
-                isRemoteVideoAdded = true 
+    // Lifecycle and Initialization Logic
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_CREATE) {
+                // Check Permissions
+                val perms = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+                if (perms.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) {
+                    hasPermissions = true
+                } else {
+                    permissionLauncher.launch(perms)
+                }
             }
-        } else {
-            permissionLauncher.launch(permissions)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    // WebRTC Initialization Logic (Runs when permissions are granted)
+    if (hasPermissions) {
+        LaunchedEffect(Unit) {
+            // 1. Initialize Manager
+            callManager.init()
+
+            // 2. Initialize SurfaceViewRenderers on UI Thread
+            val eglContext = callManager.eglBase?.eglBaseContext
+            if (eglContext != null) {
+                // Init Local View
+                localView.init(eglContext, null)
+                localView.setZOrderMediaOverlay(true)
+                localView.setEnableHardwareScaler(true)
+                localView.setMirror(true)
+
+                // Init Remote View
+                remoteView.init(eglContext, null)
+                remoteView.setZOrderMediaOverlay(false)
+                remoteView.setEnableHardwareScaler(true)
+                remoteView.setMirror(false)
+            }
+
+            // 3. Start Local Stream
+            callManager.startLocalStream(localView, isVideoCall)
+
+            // 4. Setup Remote Stream Callback
+            callManager.onRemoteStream = { track: VideoTrack ->
+                track.addSink(remoteView)
+                isRemoteVideoAdded = true
+            }
+
+            // 5. Join Room
+            callManager.joinRoom(roomId)
+
+            // 6. Handle Call End
+            callManager.onCallEnded = {
+                onCallEnd()
+            }
         }
     }
 
     // UI Layout
     Box(modifier = Modifier.fillMaxSize()) {
-        // Background Color
-        if (!isVideoCall) {
+        // Background
+        if (!isVideoCall || !isRemoteVideoAdded) {
             Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
         }
 
         // Remote Video (Full Screen)
         if (isVideoCall) {
-            if (isRemoteVideoAdded) {
-                AndroidView(
-                    factory = { remoteView },
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
+            AndroidView(
+                factory = { remoteView },
+                modifier = Modifier.fillMaxSize()
+            )
+            
+            if (!isRemoteVideoAdded) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background),
+                    modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
@@ -145,7 +189,7 @@ fun CallScreen(
             }
         }
 
-        // Timer for Video Call (Top Center)
+        // Timer for Video Call
         if (isVideoCall && callDuration > 0L) {
             Text(
                 text = formatDuration(callDuration),
@@ -185,7 +229,8 @@ fun CallScreen(
             }
         )
     }
-    
+
+    // Cleanup
     DisposableEffect(Unit) {
         onDispose {
             localView.release()
@@ -195,27 +240,6 @@ fun CallScreen(
     }
 }
 
-private fun initializeAndStartCall(
-    manager: CallManager,
-    localView: SurfaceViewRenderer,
-    remoteView: SurfaceViewRenderer,
-    roomId: String,
-    isVideoCall: Boolean,
-    onEnd: () -> Unit,
-    onRemote: () -> Unit
-) {
-    manager.init()
-    manager.startLocalStream(localView, isVideoCall)
-    manager.joinRoom(roomId)
-    
-    manager.onRemoteStream = { track ->
-        track.addSink(remoteView)
-        onRemote()
-    }
-    manager.onCallEnded = { onEnd() }
-}
-
-// Helper to format time
 fun formatDuration(seconds: Long): String {
     val mins = TimeUnit.SECONDS.toMinutes(seconds)
     val secs = seconds - TimeUnit.MINUTES.toSeconds(mins)
@@ -242,53 +266,18 @@ fun ControlBar(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        ControlButton(
-            icon = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
-            background = if (isMuted) Color.Red else Color.DarkGray,
-            onClick = onMuteToggle
-        )
-        
-        ControlButton(
-            icon = if (isSpeakerOn) Icons.Default.VolumeUp else Icons.Default.VolumeDown,
-            background = if (isSpeakerOn) Color(0xFF4CAF50) else Color.DarkGray,
-            onClick = onSpeakerToggle
-        )
-
+        ControlButton(icon = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic, background = if (isMuted) Color.Red else Color.DarkGray, onClick = onMuteToggle)
+        ControlButton(icon = if (isSpeakerOn) Icons.Default.VolumeUp else Icons.Default.VolumeDown, background = if (isSpeakerOn) Color(0xFF4CAF50) else Color.DarkGray, onClick = onSpeakerToggle)
         if (isVideoCall) {
-            ControlButton(
-                icon = if (isVideoOff) Icons.Default.VideocamOff else Icons.Default.Videocam,
-                background = if (isVideoOff) Color.Red else Color.DarkGray,
-                onClick = onVideoToggle
-            )
+            ControlButton(icon = if (isVideoOff) Icons.Default.VideocamOff else Icons.Default.Videocam, background = if (isVideoOff) Color.Red else Color.DarkGray, onClick = onVideoToggle)
         }
-
-        ControlButton(
-            icon = Icons.Default.CallEnd,
-            background = Color.Red,
-            onClick = onEndCall
-        )
+        ControlButton(icon = Icons.Default.CallEnd, background = Color.Red, onClick = onEndCall)
     }
 }
 
 @Composable
-fun ControlButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    background: Color,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .size(50.dp)
-            .clip(CircleShape)
-            .background(background)
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier.size(24.dp)
-        )
+fun ControlButton(icon: androidx.compose.ui.graphics.vector.ImageVector, background: Color, onClick: () -> Unit) {
+    Box(modifier = Modifier.size(50.dp).clip(CircleShape).background(background).clickable { onClick() }, contentAlignment = Alignment.Center) {
+        Icon(imageVector = icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
     }
 }
