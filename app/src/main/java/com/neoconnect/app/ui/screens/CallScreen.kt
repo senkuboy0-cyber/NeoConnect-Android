@@ -18,13 +18,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import com.neoconnect.app.webrtc.CallManager
 import kotlinx.coroutines.delay
 import org.webrtc.SurfaceViewRenderer
@@ -34,129 +31,88 @@ import java.util.concurrent.TimeUnit
 @Composable
 fun CallScreen(
     roomId: String,
-    isVideoCall: Boolean = true,
+    isVideoCall: Boolean,
     onCallEnd: () -> Unit
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
     
-    // State
+    // States
     var isMuted by remember { mutableStateOf(false) }
     var isVideoOff by remember { mutableStateOf(false) }
     var isRemoteVideoAdded by remember { mutableStateOf(false) }
     var isSpeakerOn by remember { mutableStateOf(isVideoCall) }
     var callDuration by remember { mutableStateOf(0L) }
-    var hasPermissions by remember { mutableStateOf(false) }
+    var isCallReady by remember { mutableStateOf(false) }
 
-    // Manager - Initialized once
+    // Manager
     val callManager = remember { CallManager(context) }
 
-    // Create Views using remember (Created on UI Thread)
+    // Views (Initialize once)
     val localView = remember { SurfaceViewRenderer(context) }
     val remoteView = remember { SurfaceViewRenderer(context) }
 
-    // Timer Logic
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1000L)
-            if (hasPermissions) callDuration++
-        }
-    }
-
-    // Permission Launcher
+    // Permissions
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val granted = permissions.values.all { it }
         if (granted) {
-            hasPermissions = true
+            startCall(callManager, localView, remoteView, roomId, isVideoCall) { isCallReady = true }
         }
     }
 
-    // Lifecycle and Initialization Logic
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_CREATE) {
-                // Check Permissions
-                val perms = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
-                if (perms.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) {
-                    hasPermissions = true
-                } else {
-                    permissionLauncher.launch(perms)
-                }
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
+    // Init Block
+    LaunchedEffect(Unit) {
+        val perms = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+        if (perms.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) {
+            startCall(callManager, localView, remoteView, roomId, isVideoCall) { isCallReady = true }
+        } else {
+            permissionLauncher.launch(perms)
         }
     }
 
-    // WebRTC Initialization Logic (Runs when permissions are granted)
-    if (hasPermissions) {
-        LaunchedEffect(Unit) {
-            // 1. Initialize Manager
-            callManager.init()
-
-            // 2. Initialize SurfaceViewRenderers on UI Thread
-            val eglContext = callManager.eglBase?.eglBaseContext
-            if (eglContext != null) {
-                // Init Local View
-                localView.init(eglContext, null)
-                localView.setZOrderMediaOverlay(true)
-                localView.setEnableHardwareScaler(true)
-                localView.setMirror(true)
-
-                // Init Remote View
-                remoteView.init(eglContext, null)
-                remoteView.setZOrderMediaOverlay(false)
-                remoteView.setEnableHardwareScaler(true)
-                remoteView.setMirror(false)
-            }
-
-            // 3. Start Local Stream
-            callManager.startLocalStream(localView, isVideoCall)
-
-            // 4. Setup Remote Stream Callback
-            callManager.onRemoteStream = { track: VideoTrack ->
-                track.addSink(remoteView)
-                isRemoteVideoAdded = true
-            }
-
-            // 5. Join Room
-            callManager.joinRoom(roomId)
-
-            // 6. Handle Call End
-            callManager.onCallEnded = {
-                onCallEnd()
-            }
+    // Timer
+    LaunchedEffect(isCallReady) {
+        while (isCallReady) {
+            delay(1000L)
+            callDuration++
         }
     }
 
-    // UI Layout
+    // Remote Stream Callback Setup
+    LaunchedEffect(Unit) {
+        callManager.onRemoteStream = { track ->
+            // Ensure we are on UI thread conceptually
+            track.addSink(remoteView)
+            isRemoteVideoAdded = true
+        }
+        callManager.onCallEnded = {
+            onCallEnd()
+        }
+    }
+
+    // UI
     Box(modifier = Modifier.fillMaxSize()) {
-        // Background
         if (!isVideoCall || !isRemoteVideoAdded) {
             Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
         }
 
-        // Remote Video (Full Screen)
+        // Remote Video
         if (isVideoCall) {
             AndroidView(
                 factory = { remoteView },
                 modifier = Modifier.fillMaxSize()
             )
-            
             if (!isRemoteVideoAdded) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                }
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center),
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
+        }
 
-            // Local Video (PiP)
+        // Local Video (PiP)
+        if (isVideoCall) {
             AndroidView(
                 factory = { localView },
                 modifier = Modifier
@@ -166,30 +122,22 @@ fun CallScreen(
                     .clip(RoundedCornerShape(16.dp))
                     .clickable { callManager.switchCamera() }
             )
-        } else {
-            // Audio Call UI
+        }
+
+        // Audio UI
+        if (!isVideoCall) {
             Column(
                 modifier = Modifier.fillMaxSize(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.Person,
-                    contentDescription = "Audio Call",
-                    modifier = Modifier.size(120.dp),
-                    tint = Color.White
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = formatDuration(callDuration),
-                    color = Color.White,
-                    fontSize = 24.sp,
-                    style = MaterialTheme.typography.titleLarge
-                )
+                Icon(Icons.Default.Person, "Audio", Modifier.size(120.dp), Color.White)
+                Spacer(Modifier.height(16.dp))
+                Text(formatDuration(callDuration), color = Color.White, fontSize = 24.sp)
             }
         }
 
-        // Timer for Video Call
+        // Timer for Video
         if (isVideoCall && callDuration > 0L) {
             Text(
                 text = formatDuration(callDuration),
@@ -204,40 +152,63 @@ fun CallScreen(
 
         // Controls
         ControlBar(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 40.dp),
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 40.dp),
             isMuted = isMuted,
             isVideoOff = isVideoOff,
             isSpeakerOn = isSpeakerOn,
             isVideoCall = isVideoCall,
-            onMuteToggle = {
-                isMuted = !isMuted
-                callManager.toggleMute(isMuted)
-            },
-            onVideoToggle = {
-                isVideoOff = !isVideoOff
-                callManager.toggleCamera(isVideoOff)
-            },
-            onSpeakerToggle = {
-                isSpeakerOn = !isSpeakerOn
-                callManager.enableSpeaker(isSpeakerOn)
-            },
-            onEndCall = {
-                callManager.endCall()
-                onCallEnd()
-            }
+            onMuteToggle = { isMuted = !isMuted; callManager.toggleMute(isMuted) },
+            onVideoToggle = { isVideoOff = !isVideoOff; callManager.toggleCamera(isVideoOff) },
+            onSpeakerToggle = { isSpeakerOn = !isSpeakerOn; callManager.enableSpeaker(isSpeakerOn) },
+            onEndCall = { callManager.endCall(); onCallEnd() }
         )
     }
 
     // Cleanup
     DisposableEffect(Unit) {
         onDispose {
-            localView.release()
-            remoteView.release()
+            // Only release if initialized to avoid crash
+            try { localView.release() } catch (e: Exception) {}
+            try { remoteView.release() } catch (e: Exception) {}
             callManager.endCall()
         }
     }
+}
+
+private fun startCall(
+    manager: CallManager,
+    localView: SurfaceViewRenderer,
+    remoteView: SurfaceViewRenderer,
+    roomId: String,
+    isVideoCall: Boolean,
+    onReady: () -> Unit
+) {
+    manager.init()
+    val eglContext = manager.eglBase?.eglBaseContext
+
+    // 1. Init Remote View (Always)
+    if (eglContext != null) {
+        remoteView.init(eglContext, null)
+        remoteView.setZOrderMediaOverlay(false)
+        remoteView.setMirror(false)
+    }
+
+    // 2. Create Stream
+    manager.createStream(isVideoCall)
+
+    // 3. Init Local View & Start Video (Only if Video Call)
+    if (isVideoCall) {
+        if (eglContext != null) {
+            localView.init(eglContext, null)
+            localView.setZOrderMediaOverlay(true)
+            localView.setMirror(true)
+            manager.startLocalVideoCapture(localView)
+        }
+    }
+
+    // 4. Join Room
+    manager.joinRoom(roomId)
+    onReady()
 }
 
 fun formatDuration(seconds: Long): String {
@@ -247,30 +218,11 @@ fun formatDuration(seconds: Long): String {
 }
 
 @Composable
-fun ControlBar(
-    modifier: Modifier = Modifier,
-    isMuted: Boolean,
-    isVideoOff: Boolean,
-    isSpeakerOn: Boolean,
-    isVideoCall: Boolean,
-    onMuteToggle: () -> Unit,
-    onVideoToggle: () -> Unit,
-    onSpeakerToggle: () -> Unit,
-    onEndCall: () -> Unit
-) {
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(50))
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+fun ControlBar(modifier: Modifier, isMuted: Boolean, isVideoOff: Boolean, isSpeakerOn: Boolean, isVideoCall: Boolean, onMuteToggle: () -> Unit, onVideoToggle: () -> Unit, onSpeakerToggle: () -> Unit, onEndCall: () -> Unit) {
+    Row(modifier = modifier.clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)).padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
         ControlButton(icon = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic, background = if (isMuted) Color.Red else Color.DarkGray, onClick = onMuteToggle)
         ControlButton(icon = if (isSpeakerOn) Icons.Default.VolumeUp else Icons.Default.VolumeDown, background = if (isSpeakerOn) Color(0xFF4CAF50) else Color.DarkGray, onClick = onSpeakerToggle)
-        if (isVideoCall) {
-            ControlButton(icon = if (isVideoOff) Icons.Default.VideocamOff else Icons.Default.Videocam, background = if (isVideoOff) Color.Red else Color.DarkGray, onClick = onVideoToggle)
-        }
+        if (isVideoCall) { ControlButton(icon = if (isVideoOff) Icons.Default.VideocamOff else Icons.Default.Videocam, background = if (isVideoOff) Color.Red else Color.DarkGray, onClick = onVideoToggle) }
         ControlButton(icon = Icons.Default.CallEnd, background = Color.Red, onClick = onEndCall)
     }
 }
@@ -278,6 +230,6 @@ fun ControlBar(
 @Composable
 fun ControlButton(icon: androidx.compose.ui.graphics.vector.ImageVector, background: Color, onClick: () -> Unit) {
     Box(modifier = Modifier.size(50.dp).clip(CircleShape).background(background).clickable { onClick() }, contentAlignment = Alignment.Center) {
-        Icon(imageVector = icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+        Icon(icon, null, tint = Color.White, modifier = Modifier.size(24.dp))
     }
 }

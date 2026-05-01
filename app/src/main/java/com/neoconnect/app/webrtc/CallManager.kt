@@ -33,6 +33,7 @@ class CallManager(private val context: Context) {
 
     private val SERVER_URL = "https://call-signaling-server.onrender.com"
 
+
     private val iceServers = listOf(
         PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
     )
@@ -42,7 +43,9 @@ class CallManager(private val context: Context) {
         savedAudioMode = audioManager?.mode ?: AudioManager.MODE_NORMAL
         
         // Initialize WebRTC
-        eglBase = EglBase.create()
+        if (eglBase == null) {
+            eglBase = EglBase.create()
+        }
         
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(context)
@@ -57,40 +60,33 @@ class CallManager(private val context: Context) {
     }
 
     @SuppressLint("MissingPermission")
-    fun startLocalStream(localView: SurfaceViewRenderer, isVideoCall: Boolean = true) {
+    fun startLocalVideoCapture(localView: SurfaceViewRenderer) {
         val ctx = eglBase?.eglBaseContext ?: return
         
-        // Init Local View
-        localView.init(ctx, null)
-        localView.setZOrderMediaOverlay(true)
-        localView.setEnableHardwareScaler(true)
-        localView.setMirror(true) // Self view mirror
-        
+        // Video Source & Track
+        val videoSource = factory?.createVideoSource(false)
+        videoCapturer = createCameraCapturer()
         val surfaceHelper = SurfaceTextureHelper.create("CaptureThread", ctx)
-
-        // Audio Source & Track
+        
+        videoCapturer?.initialize(surfaceHelper, context, videoSource?.capturerObserver)
+        videoCapturer?.startCapture(1280, 720, 30)
+        
+        localVideoTrack = factory?.createVideoTrack("video0", videoSource)
+        localVideoTrack?.addSink(localView) // Add sink to the view passed from UI
+        
+        localStream?.addTrack(localVideoTrack)
+    }
+    
+    fun startLocalAudio() {
         val audioSource = factory?.createAudioSource(MediaConstraints())
         localAudioTrack = factory?.createAudioTrack("audio0", audioSource)
-        
-        if (isVideoCall) {
-            // Video Source & Track
-            val videoSource = factory?.createVideoSource(false)
-            videoCapturer = createCameraCapturer()
-            videoCapturer?.initialize(surfaceHelper, context, videoSource?.capturerObserver)
-            videoCapturer?.startCapture(1280, 720, 30)
-            
-            localVideoTrack = factory?.createVideoTrack("video0", videoSource)
-            localVideoTrack?.addSink(localView)
-        }
-        
-        // Create Stream
-        localStream = factory?.createLocalMediaStream("stream0")
         localStream?.addTrack(localAudioTrack)
-        if (isVideoCall) {
-            localStream?.addTrack(localVideoTrack)
-        }
-        
-        setupAudio(isVideoCall) // Setup Audio based on call type
+    }
+
+    fun createStream(isVideoCall: Boolean) {
+        localStream = factory?.createLocalMediaStream("stream0")
+        startLocalAudio() // Audio is always needed
+        setupAudio(isVideoCall)
     }
 
     private fun createCameraCapturer(): VideoCapturer? {
@@ -237,13 +233,9 @@ class CallManager(private val context: Context) {
     fun toggleCamera(off: Boolean) { localVideoTrack?.setEnabled(!off) }
     fun switchCamera() { (videoCapturer as? CameraVideoCapturer)?.switchCamera(null) }
     
-    // Audio Management
     private fun setupAudio(isVideoCall: Boolean) {
         audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
-        
-        // Video Call e Speaker On, Audio Call e Earpiece
         audioManager?.isSpeakerphoneOn = isVideoCall
-        
         setAudioFocus(true)
     }
 
@@ -268,7 +260,7 @@ class CallManager(private val context: Context) {
 
     fun endCall() {
         setAudioFocus(false)
-        audioManager?.mode = savedAudioMode // Restore old mode
+        audioManager?.mode = savedAudioMode
         audioManager?.isSpeakerphoneOn = false
         
         videoCapturer?.stopCapture()
