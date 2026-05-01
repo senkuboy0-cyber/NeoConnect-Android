@@ -134,30 +134,34 @@ class CallManager {
 
     private fun createOffer() {
         peerConnection?.createOffer(object : SimpleSdpObserver() {
-            override fun onCreateSuccess(sdp: SessionDescription) {
-                peerConnection?.setLocalDescription(SimpleSdpObserver(), sdp)
-                val json = JSONObject()
-                json.put("to", otherUserId)
-                val offer = JSONObject()
-                offer.put("type", sdp.type.canonicalForm())
-                offer.put("sdp", sdp.description)
-                json.put("offer", offer)
-                socket?.emit("offer", json)
+            override fun onCreateSuccess(sdp: SessionDescription?) {
+                sdp?.let {
+                    peerConnection?.setLocalDescription(SimpleSdpObserver(), it)
+                    val json = JSONObject()
+                    json.put("to", otherUserId)
+                    val offer = JSONObject()
+                    offer.put("type", it.type.canonicalForm())
+                    offer.put("sdp", it.description)
+                    json.put("offer", offer)
+                    socket?.emit("offer", json)
+                }
             }
         }, MediaConstraints())
     }
 
     private fun createAnswer() {
         peerConnection?.createAnswer(object : SimpleSdpObserver() {
-            override fun onCreateSuccess(sdp: SessionDescription) {
-                peerConnection?.setLocalDescription(SimpleSdpObserver(), sdp)
-                val json = JSONObject()
-                json.put("to", otherUserId)
-                val answer = JSONObject()
-                answer.put("type", sdp.type.canonicalForm())
-                answer.put("sdp", sdp.description)
-                json.put("answer", answer)
-                socket?.emit("answer", json)
+            override fun onCreateSuccess(sdp: SessionDescription?) {
+                sdp?.let {
+                    peerConnection?.setLocalDescription(SimpleSdpObserver(), it)
+                    val json = JSONObject()
+                    json.put("to", otherUserId)
+                    val answer = JSONObject()
+                    answer.put("type", it.type.canonicalForm())
+                    answer.put("sdp", it.description)
+                    json.put("answer", answer)
+                    socket?.emit("answer", json)
+                }
             }
         }, MediaConstraints())
     }
@@ -172,12 +176,12 @@ class CallManager {
                 audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                     .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION).build())
                     .build()
-                audioManager.requestAudioFocus(audioFocusRequest!!)
-            } else { audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) } }
+                audioManager?.requestAudioFocus(audioFocusRequest!!)
+            } else { audioFocusRequest?.let { audioManager?.abandonAudioFocusRequest(it) } }
         } else {
             @Suppress("DEPRECATION")
-            if (enable) audioManager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN)
-            else audioManager.abandonAudioFocus(null)
+            if (enable) audioManager?.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN)
+            else audioManager?.abandonAudioFocus(null)
         }
     }
 
