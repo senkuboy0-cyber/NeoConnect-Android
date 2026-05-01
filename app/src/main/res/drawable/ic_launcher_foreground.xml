@@ -6,6 +6,7 @@
     
     <!-- Gradient Definition -->
     <group android:translateX="14" android:translateY="14">
+        <!-- Cloud Shape -->
         <path
             android:pathData="M30 65 Q20 65 20 55 Q20 45 30 45 Q30 30 45 28 Q60 25 70 40 Q85 38 88 50 Q90 65 75 68 Z"
             android:fillColor="#4facfe"/>
@@ -17,8 +18,8 @@
             
         <!-- Video Icon inside Cloud -->
         <group android:translateX="36" android:translateY="42">
-            <rect x="0" y="0" width="24" height="16" rx="3" fill="#FFFFFF" fillAlpha="0.95"/>
-            <path d="M24 4 L32 0 L32 16 L24 12 Z" fill="#FFFFFF" fillAlpha="0.95"/>
+            <rect x="0" y="0" width="24" height="16" rx="3" fill="#FFFFFF" android:fillAlpha="0.95"/>
+            <path d="M24 4 L32 0 L32 16 L24 12 Z" fill="#FFFFFF" android:fillAlpha="0.95"/>
         </group>
     </group>
 </vector>
