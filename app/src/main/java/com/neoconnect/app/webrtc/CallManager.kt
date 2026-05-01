@@ -6,7 +6,6 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.util.Log
-import android.view.SurfaceView
 import io.socket.client.IO
 import io.socket.client.Socket
 import org.webrtc.*
@@ -26,14 +25,11 @@ class CallManager {
     var onRemoteStream: ((VideoTrack) -> Unit)? = null
     var onCallEnded: (() -> Unit)? = null
 
-    fun init(surfaceView: SurfaceView, context: Context) {
-        audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        eglBase = EglBase.create()
-        surfaceView.holder?.setFixatedSize(1920, 1080)
-        surfaceView.setEnableHardwareAcceleration(true)
-        
+    fun init() {
         PeerConnectionFactory.initialize(
-            PeerConnectionFactory.InitializationOptions.builder(context).createInitializationOptions()
+            PeerConnectionFactory.InitializationOptions.builder(
+                org.webrtc.EglBase.create().eglBaseContext as android.content.Context
+            ).createInitializationOptions()
         )
         
         val options = PeerConnectionFactory.Options()
@@ -54,30 +50,31 @@ class CallManager {
                     val track = transceiver?.receiver?.track()
                     if (track is VideoTrack) {
                         onRemoteStream?.invoke(track)
-                        track.addSink(surfaceView)
                     }
                 }
             }
         )
+    }
+
+    fun startLocalStream(context: Context, renderer: SurfaceViewRenderer) {
+        eglBase = EglBase.create()
+        audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        renderer.init(eglBase?.eglBaseContext, null)
+        renderer.setEnableHardwareScaler(true)
         
-        startLocalVideoTrack(context, surfaceView)
-    }
-
-    fun initLocal(surfaceView: SurfaceView) {
-        localVideoTrack?.addSink(surfaceView)
-    }
-
-    private fun startLocalVideoTrack(context: Context, surfaceView: SurfaceView) {
-        val videoSource = PeerConnectionFactory.createVideoSource(
-            Camera2Capturer(context as android.app.Activity, null)
-        )
+        val videoSource = PeerConnectionFactory.createVideoSource(videoCapturer?.isCaptureRunning != true)
         videoCapturer = Camera2Capturer(context as android.app.Activity, null)
+        videoCapturer?.startCapture(1280, 720, 30)
         localVideoTrack = PeerConnectionFactory.createVideoTrack("video", videoSource)
         
         val audioSource = PeerConnectionFactory.createAudioSource(MediaConstraints())
         localAudioTrack = PeerConnectionFactory.createAudioTrack("audio", audioSource)
         
-        localVideoTrack?.addSink(surfaceView)
+        localVideoTrack?.addSink(renderer)
+    }
+
+    fun startLocalStream(renderer: SurfaceViewRenderer) {
+        localVideoTrack?.addSink(renderer)
     }
 
     private fun makePeerConstraints(): PeerConnection.RTCConfiguration {
@@ -165,17 +162,9 @@ class CallManager {
         }, MediaConstraints())
     }
 
-    fun toggleMute(mute: Boolean) {
-        localAudioTrack?.setEnabled(!mute)
-    }
-
-    fun toggleCamera(off: Boolean) {
-        localVideoTrack?.setEnabled(!off)
-    }
-
-    fun switchCamera() {
-        (videoCapturer as? CameraVideoCapturer)?.switchCamera(null)
-    }
+    fun toggleMute(mute: Boolean) { localAudioTrack?.setEnabled(!mute) }
+    fun toggleCamera(off: Boolean) { localVideoTrack?.setEnabled(!off) }
+    fun switchCamera() { (videoCapturer as? CameraVideoCapturer)?.switchCamera(null) }
 
     private fun setAudioFocus(enable: Boolean) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -184,9 +173,7 @@ class CallManager {
                     .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION).build())
                     .build()
                 audioManager.requestAudioFocus(audioFocusRequest!!)
-            } else {
-                audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
-            }
+            } else { audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) } }
         } else {
             @Suppress("DEPRECATION")
             if (enable) audioManager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN)
