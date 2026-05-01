@@ -21,8 +21,8 @@ private val DarkColorScheme = darkColorScheme(
     onSecondary = NeoWhite,
     onTertiary = NeoWhite,
     onBackground = NeoWhite,
-    onSurface = NeoWhite,
-    typography = AppTypography
+    onSurface = NeoWhite
+    // typography এখানে নেই
 )
 
 @Composable
