@@ -1,6 +1,7 @@
 package com.neoconnect.app.ui.screens
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -29,7 +30,7 @@ import org.webrtc.VideoTrack
 @Composable
 fun CallScreen(
     roomId: String,
-    isVideoCall: Boolean = true, // ভিডিও না অডিও কল সেটা বোঝার জন্য
+    isVideoCall: Boolean = true,
     onCallEnd: () -> Unit
 ) {
     val context = LocalContext.current
@@ -38,7 +39,7 @@ fun CallScreen(
     var isMuted by remember { mutableStateOf(false) }
     var isVideoOff by remember { mutableStateOf(false) }
     var isRemoteVideoAdded by remember { mutableStateOf(false) }
-    var isSpeakerOn by remember { mutableStateOf(true) } // Default Speaker On
+    var isSpeakerOn by remember { mutableStateOf(true) }
 
     // Views
     val localView = remember { SurfaceViewRenderer(context) }
@@ -47,7 +48,7 @@ fun CallScreen(
     // Manager
     val callManager = remember { CallManager(context) }
 
-    // Screen Share Logic (Simplified)
+    // Screen Share Logic
     val mediaProjectionManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
     
     // Permissions
@@ -63,7 +64,7 @@ fun CallScreen(
     }
 
     LaunchedEffect(Unit) {
-        // Initialize Remote View with Shared EglContext
+        // Initialize Remote View
         callManager.eglBase?.eglBaseContext?.let {
             remoteView.init(it, null)
         }
@@ -83,7 +84,7 @@ fun CallScreen(
 
     // UI Layout
     Box(modifier = Modifier.fillMaxSize()) {
-        // Remote Video (Full Screen) - Only show if Video Call
+        // Remote Video (Full Screen)
         if (isVideoCall) {
             if (isRemoteVideoAdded) {
                 AndroidView(
@@ -91,7 +92,6 @@ fun CallScreen(
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
-                // Waiting UI
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -102,7 +102,7 @@ fun CallScreen(
                 }
             }
 
-            // Local Video (PiP) - Only show if Video Call
+            // Local Video (PiP)
             AndroidView(
                 factory = { localView },
                 modifier = Modifier
@@ -113,7 +113,7 @@ fun CallScreen(
                     .clickable { callManager.switchCamera() }
             )
         } else {
-            // Audio Call UI (Only Icon in Center)
+            // Audio Call UI
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -121,7 +121,7 @@ fun CallScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.Person, // Use Person icon
+                    imageVector = Icons.Default.Person,
                     contentDescription = "Audio Call",
                     modifier = Modifier.size(120.dp),
                     tint = Color.White
@@ -180,7 +180,6 @@ private fun initCall(
     manager.joinRoom(roomId)
     
     manager.onRemoteStream = { track ->
-        // Ensure we add sink on UI thread and remote view is ready
         track.addSink(remoteView)
         onRemote()
     }
@@ -203,25 +202,22 @@ fun ControlBar(
         modifier = modifier
             .clip(RoundedCornerShape(50))
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
-            .padding(horizontal = 16.dp, vertical = 12.dp), // Reduced padding
-        horizontalArrangement = Arrangement.spacedBy(16.dp), // Reduced space
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Mute
         ControlButton(
             icon = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
             background = if (isMuted) Color.Red else Color.DarkGray,
             onClick = onMuteToggle
         )
         
-        // Speaker (New)
         ControlButton(
             icon = if (isSpeakerOn) Icons.Default.VolumeUp else Icons.Default.VolumeDown,
-            background = if (isSpeakerOn) Color(0xFF4CAF50) else Color.DarkGray, // Green if on
+            background = if (isSpeakerOn) Color(0xFF4CAF50) else Color.DarkGray,
             onClick = onSpeakerToggle
         )
 
-        // Video (Only for video call)
         if (isVideoCall) {
             ControlButton(
                 icon = if (isVideoOff) Icons.Default.VideocamOff else Icons.Default.Videocam,
@@ -230,7 +226,6 @@ fun ControlBar(
             )
         }
 
-        // End Call
         ControlButton(
             icon = Icons.Default.CallEnd,
             background = Color.Red,
@@ -247,7 +242,7 @@ fun ControlButton(
 ) {
     Box(
         modifier = Modifier
-            .size(50.dp) // Slightly smaller
+            .size(50.dp)
             .clip(CircleShape)
             .background(background)
             .clickable { onClick() },
