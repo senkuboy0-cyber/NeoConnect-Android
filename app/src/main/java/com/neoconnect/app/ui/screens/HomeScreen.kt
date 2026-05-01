@@ -3,6 +3,7 @@ package com.neoconnect.app.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -13,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.neoconnect.app.ui.theme.NeoPrimary
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(onJoinCall: (String) -> Unit) {
     var roomId by remember { mutableStateOf("") }
@@ -39,7 +41,7 @@ fun HomeScreen(onJoinCall: (String) -> Unit) {
                 label = { Text("Room ID") },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
+                colors = TextFieldDefaults.outlinedTextFieldColors(
                     focusedBorderColor = NeoPrimary,
                     unfocusedBorderColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
                     cursorColor = NeoPrimary
