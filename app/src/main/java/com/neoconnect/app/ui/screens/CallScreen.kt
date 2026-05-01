@@ -1,6 +1,7 @@
 package com.neoconnect.app.ui.screens
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
@@ -29,7 +30,6 @@ import androidx.core.content.ContextCompat
 import com.neoconnect.app.webrtc.CallManager
 import kotlinx.coroutines.delay
 import org.webrtc.SurfaceViewRenderer
-import org.webrtc.VideoTrack
 import java.util.concurrent.TimeUnit
 
 @Composable
