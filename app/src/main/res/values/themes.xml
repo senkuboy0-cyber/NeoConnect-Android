@@ -1,7 +1,10 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <style name="Theme.NeoConnect" parent="android:Theme.Material.NoActionBar">
-        <item name="android:statusBarColor">@android:color/black</item>
-        <item name="android:navigationBarColor">@android:color/black</item>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Theme.NeoConnect" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- স্প্ল্যাশ স্ক্রিনের ব্যাকগ্রাউন্ড কালার এখানে সেট করো -->
+        <item name="android:windowBackground">@color/splash_bg</item>
+        <!-- Status Bar Color -->
+        <item name="android:statusBarColor">@color/splash_bg</item>
+        <item name="android:navigationBarColor">@color/splash_bg</item>
     </style>
 </resources>
