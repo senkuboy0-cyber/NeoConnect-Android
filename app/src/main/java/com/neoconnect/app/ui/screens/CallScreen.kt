@@ -44,11 +44,13 @@ fun CallScreen(
             factory = { context ->
                 SurfaceViewRenderer(context).also { renderer ->
                     manager.init()
+                    manager.startLocalStream(context, renderer)
+                    manager.joinRoom(roomId)
+                    
                     manager.onRemoteStream = { track ->
                         track.addSink(renderer)
                     }
                     manager.onCallEnded = { onEnd() }
-                    manager.joinRoom(roomId)
                 }
             },
             modifier = Modifier.fillMaxSize()
@@ -58,7 +60,7 @@ fun CallScreen(
         AndroidView(
             factory = { context ->
                 SurfaceViewRenderer(context).also { renderer ->
-                    manager.startLocalStream(context, renderer)
+                    manager.startLocalStream(renderer)
                 }
             },
             modifier = Modifier
