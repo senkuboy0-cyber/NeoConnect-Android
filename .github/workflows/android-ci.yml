@@ -18,17 +18,22 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    # Gradle Wrapper ফাইল না থাকায় আমরা Gradle Setup Action ব্যবহার করছি
+    # Gradle Setup with Caching (দ্রুত বিল্ডের জন্য)
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
       with:
         gradle-version: '8.4'
+        cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
 
     - name: Build Debug APK
       run: gradle assembleDebug --no-daemon
       
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
       with:
-        name: NeoConnect-Debug
-        path: app/build/outputs/apk/debug/app-debug.apk
+        tag_name: v1.0.${{ github.run_number }}
+        name: Release Build ${{ github.run_number }}
+        body: New Release for NeoConnect App.
+        files: app/build/outputs/apk/debug/app-debug.apk
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
