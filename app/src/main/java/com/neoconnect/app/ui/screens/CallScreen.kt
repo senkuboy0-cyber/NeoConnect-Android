@@ -1,5 +1,9 @@
 package com.neoconnect.app.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -17,80 +21,137 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import com.neoconnect.app.webrtc.CallManager
-import com.neoconnect.app.webrtc.SurfaceViewRenderer
+import org.webrtc.SurfaceViewRenderer
+import org.webrtc.VideoTrack
 
 @Composable
 fun CallScreen(
     roomId: String,
-    onEnd: () -> Unit
+    onCallEnd: () -> Unit
 ) {
+    val context = LocalContext.current
+    
+    // State
     var isMuted by remember { mutableStateOf(false) }
     var isVideoOff by remember { mutableStateOf(false) }
-    
-    val manager = remember {
-        CallManager()
+    var isRemoteVideoAdded by remember { mutableStateOf(false) }
+
+    // Views
+    val localView = remember { SurfaceViewRenderer(context) }
+    val remoteView = remember { SurfaceViewRenderer(context) }
+
+    // Manager
+    val callManager = remember { CallManager(context) }
+
+    // Permissions
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions.values.all { it }
+        if (granted) {
+            initCall(callManager, localView, remoteView, roomId, onCallEnd) { 
+                isRemoteVideoAdded = true 
+            }
+        }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-    ) {
-        // Remote Video View
-        AndroidView(
-            factory = { context ->
-                SurfaceViewRenderer(context).also { renderer ->
-                    manager.init()
-                    manager.startLocalStream(context, renderer)
-                    manager.joinRoom(roomId)
-                    
-                    manager.onRemoteStream = { track ->
-                        track.addSink(renderer)
-                    }
-                    manager.onCallEnded = { onEnd() }
-                }
-            },
-            modifier = Modifier.fillMaxSize()
+    LaunchedEffect(Unit) {
+        val permissions = arrayOf(
+            Manifest.permission.CAMERA,
+            Manifest.permission.RECORD_AUDIO
         )
+        if (permissions.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) {
+            initCall(callManager, localView, remoteView, roomId, onCallEnd) { 
+                isRemoteVideoAdded = true 
+            }
+        } else {
+            permissionLauncher.launch(permissions)
+        }
+    }
 
-        // Local Video View
+    // UI Layout
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Remote Video (Full Screen)
+        if (isRemoteVideoAdded) {
+            AndroidView(
+                factory = { remoteView },
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            }
+        }
+
+        // Local Video (PiP)
         AndroidView(
-            factory = { context ->
-                SurfaceViewRenderer(context).also { renderer ->
-                    manager.startLocalStream(renderer)
-                }
-            },
+            factory = { localView },
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(16.dp)
-                .size(120.dp, 160.dp)
-                .clip(RoundedCornerShape(12.dp))
+                .size(120.dp, 180.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .clickable { callManager.switchCamera() }
         )
 
-        // Control Bar
+        // Controls
         ControlBar(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 48.dp),
+                .padding(bottom = 40.dp),
             isMuted = isMuted,
             isVideoOff = isVideoOff,
             onMuteToggle = {
                 isMuted = !isMuted
-                manager.toggleMute(isMuted)
+                callManager.toggleMute(isMuted)
             },
             onVideoToggle = {
                 isVideoOff = !isVideoOff
-                manager.toggleCamera(isVideoOff)
+                callManager.toggleCamera(isVideoOff)
             },
             onEndCall = {
-                manager.endCall()
-                onEnd()
+                callManager.endCall()
+                onCallEnd()
             }
         )
     }
+    
+    DisposableEffect(Unit) {
+        onDispose {
+            localView.release()
+            remoteView.release()
+            callManager.endCall()
+        }
+    }
+}
+
+private fun initCall(
+    manager: CallManager,
+    localView: SurfaceViewRenderer,
+    remoteView: SurfaceViewRenderer,
+    roomId: String,
+    onEnd: () -> Unit,
+    onRemote: () -> Unit
+) {
+    manager.init()
+    manager.startLocalStream(localView)
+    manager.joinRoom(roomId)
+    
+    manager.onRemoteStream = { track ->
+        track.addSink(remoteView)
+        onRemote()
+    }
+    manager.onCallEnded = { onEnd() }
 }
 
 @Composable
