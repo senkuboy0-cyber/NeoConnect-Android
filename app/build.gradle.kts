@@ -50,7 +50,6 @@ android {
     }
 }
 
-// এখানে kotlinOptions এর বদলে নতুন Toolchain ব্যবহার করা হলো
 kotlin {
     jvmToolchain(17)
 }
@@ -69,9 +68,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.navigation:navigation-compose:2.7.4")
     
-    // WebRTC & Socket
+    // WebRTC & Socket (ভার্সন ঠিক করা হয়েছে)
     implementation("io.socket:socket.io-client:2.1.0")
-    implementation("org.webrtc:google-webrtc:1.0.32006")
+    implementation("org.webrtc:google-webrtc:1.0.30094")
     
     // Debug
     debugImplementation("androidx.compose.ui:ui-tooling")
