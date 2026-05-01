@@ -2,6 +2,8 @@ package com.neoconnect.app.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -25,7 +27,6 @@ import androidx.core.content.ContextCompat
 import com.neoconnect.app.webrtc.CallManager
 import kotlinx.coroutines.delay
 import org.webrtc.SurfaceViewRenderer
-import org.webrtc.VideoTrack
 import java.util.concurrent.TimeUnit
 
 @Composable
@@ -41,57 +42,70 @@ fun CallScreen(
     var isVideoOff by remember { mutableStateOf(false) }
     var isRemoteVideoAdded by remember { mutableStateOf(false) }
     var isSpeakerOn by remember { mutableStateOf(isVideoCall) }
+    
+    // Timer State
+    var isCallConnected by remember { mutableStateOf(false) }
     var callDuration by remember { mutableStateOf(0L) }
-    var isCallReady by remember { mutableStateOf(false) }
 
     // Manager
     val callManager = remember { CallManager(context) }
 
-    // Views (Initialize once)
+    // Views
     val localView = remember { SurfaceViewRenderer(context) }
     val remoteView = remember { SurfaceViewRenderer(context) }
 
-    // Permissions
+    // Permission Launcher
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val granted = permissions.values.all { it }
         if (granted) {
-            startCall(callManager, localView, remoteView, roomId, isVideoCall) { isCallReady = true }
+            startCall(callManager, localView, remoteView, roomId, isVideoCall)
         }
     }
 
-    // Init Block
+    // Main Logic Block
     LaunchedEffect(Unit) {
+        // 1. Callback সেট করো
+        callManager.onRemoteStream = { track ->
+            Handler(Looper.getMainLooper()).post {
+                track.addSink(remoteView)
+                isRemoteVideoAdded = true
+            }
+        }
+        
+        callManager.onCallEnded = {
+            Handler(Looper.getMainLooper()).post {
+                onCallEnd()
+            }
+        }
+
+        callManager.onConnected = {
+            Handler(Looper.getMainLooper()).post {
+                isCallConnected = true
+            }
+        }
+
+        // 2. Permission Check
         val perms = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
         if (perms.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) {
-            startCall(callManager, localView, remoteView, roomId, isVideoCall) { isCallReady = true }
+            startCall(callManager, localView, remoteView, roomId, isVideoCall)
         } else {
             permissionLauncher.launch(perms)
         }
     }
 
-    // Timer
-    LaunchedEffect(isCallReady) {
-        while (isCallReady) {
-            delay(1000L)
-            callDuration++
+    // Timer Logic
+    LaunchedEffect(isCallConnected) {
+        if (isCallConnected) {
+            while (true) {
+                delay(1000L)
+                callDuration++
+            }
         }
     }
 
-    // Remote Stream Callback Setup
-    LaunchedEffect(Unit) {
-        callManager.onRemoteStream = { track ->
-            // Ensure we are on UI thread conceptually
-            track.addSink(remoteView)
-            isRemoteVideoAdded = true
-        }
-        callManager.onCallEnded = {
-            onCallEnd()
-        }
-    }
-
-    // UI
+    // UI Layout
     Box(modifier = Modifier.fillMaxSize()) {
         if (!isVideoCall || !isRemoteVideoAdded) {
             Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
@@ -137,7 +151,7 @@ fun CallScreen(
             }
         }
 
-        // Timer for Video
+        // Timer for Video Call
         if (isVideoCall && callDuration > 0L) {
             Text(
                 text = formatDuration(callDuration),
@@ -167,7 +181,6 @@ fun CallScreen(
     // Cleanup
     DisposableEffect(Unit) {
         onDispose {
-            // Only release if initialized to avoid crash
             try { localView.release() } catch (e: Exception) {}
             try { remoteView.release() } catch (e: Exception) {}
             callManager.endCall()
@@ -180,13 +193,12 @@ private fun startCall(
     localView: SurfaceViewRenderer,
     remoteView: SurfaceViewRenderer,
     roomId: String,
-    isVideoCall: Boolean,
-    onReady: () -> Unit
+    isVideoCall: Boolean
 ) {
     manager.init()
     val eglContext = manager.eglBase?.eglBaseContext
 
-    // 1. Init Remote View (Always)
+    // 1. Init Remote View
     if (eglContext != null) {
         remoteView.init(eglContext, null)
         remoteView.setZOrderMediaOverlay(false)
@@ -196,7 +208,7 @@ private fun startCall(
     // 2. Create Stream
     manager.createStream(isVideoCall)
 
-    // 3. Init Local View & Start Video (Only if Video Call)
+    // 3. Init Local View & Start Video
     if (isVideoCall) {
         if (eglContext != null) {
             localView.init(eglContext, null)
@@ -208,7 +220,6 @@ private fun startCall(
 
     // 4. Join Room
     manager.joinRoom(roomId)
-    onReady()
 }
 
 fun formatDuration(seconds: Long): String {

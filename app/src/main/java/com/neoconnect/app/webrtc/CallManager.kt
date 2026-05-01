@@ -33,7 +33,6 @@ class CallManager(private val context: Context) {
 
     private val SERVER_URL = "https://call-signaling-server.onrender.com"
 
-
     private val iceServers = listOf(
         PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
     )
@@ -72,20 +71,30 @@ class CallManager(private val context: Context) {
         videoCapturer?.startCapture(1280, 720, 30)
         
         localVideoTrack = factory?.createVideoTrack("video0", videoSource)
-        localVideoTrack?.addSink(localView) // Add sink to the view passed from UI
+        localVideoTrack?.addSink(localView)
         
         localStream?.addTrack(localVideoTrack)
     }
     
     fun startLocalAudio() {
-        val audioSource = factory?.createAudioSource(MediaConstraints())
+        // Audio Constraints for Noise and Echo cancellation
+        val audioConstraints = MediaConstraints().apply {
+            mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
+            mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "true"))
+            mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl", "true"))
+            mandatory.add(MediaConstraints.KeyValuePair("googHighpassFilter", "true"))
+            mandatory.add(MediaConstraints.KeyValuePair("googAudioMirroring", "false"))
+            mandatory.add(MediaConstraints.KeyValuePair("googDAEchoCancellation", "true"))
+            mandatory.add(MediaConstraints.KeyValuePair("googTypingNoiseDetection", "true"))
+        }
+        val audioSource = factory?.createAudioSource(audioConstraints)
         localAudioTrack = factory?.createAudioTrack("audio0", audioSource)
         localStream?.addTrack(localAudioTrack)
     }
 
     fun createStream(isVideoCall: Boolean) {
         localStream = factory?.createLocalMediaStream("stream0")
-        startLocalAudio() // Audio is always needed
+        startLocalAudio()
         setupAudio(isVideoCall)
     }
 
@@ -168,9 +177,11 @@ class CallManager(private val context: Context) {
                 socket?.emit("ice-candidate", json)
             }
 
+            // Receiver থেকে সরাসরি Track নেওয়া হয়েছে
             override fun onAddTrack(receiver: RtpReceiver?, streams: Array<MediaStream>?) {
-                streams?.firstOrNull()?.videoTracks?.firstOrNull()?.let {
-                    onRemoteStream?.invoke(it)
+                val track = receiver?.track()
+                if (track is VideoTrack) {
+                    onRemoteStream?.invoke(track)
                 }
             }
             
