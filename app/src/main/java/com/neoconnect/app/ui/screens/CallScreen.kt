@@ -1,7 +1,6 @@
 package com.neoconnect.app.ui.screens
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
@@ -38,19 +37,12 @@ import org.webrtc.SurfaceViewRenderer
 import org.webrtc.VideoTrack
 import java.util.concurrent.TimeUnit
 
-// Filter Data Class
 data class VideoFilter(val name: String, val colorCode: String)
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CallScreen(
-    roomId: String,
-    isVideoCall: Boolean,
-    onCallEnd: () -> Unit
-) {
+fun CallScreen(roomId: String, isVideoCall: Boolean, onCallEnd: () -> Unit) {
     val context = LocalContext.current
     
-    // States
     var isMuted by remember { mutableStateOf(false) }
     var isVideoOff by remember { mutableStateOf(false) }
     var isRemoteVideoAdded by remember { mutableStateOf(false) }
@@ -58,8 +50,7 @@ fun CallScreen(
     var isCallConnected by remember { mutableStateOf(false) }
     var callDuration by remember { mutableStateOf(0L) }
     
-    // Menu & Filter States
-    var showBottomSheet by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
     var selectedFilter by remember { mutableStateOf("Normal") }
     
     val filters = listOf(
@@ -70,160 +61,115 @@ fun CallScreen(
         VideoFilter("Vintage", "#D7CCC8")
     )
 
-    // Manager
     val callManager = remember { CallManager(context) }
-
-    // Views
     val localView = remember { SurfaceViewRenderer(context) }
     val remoteView = remember { SurfaceViewRenderer(context) }
 
-    // --- Proximity & Screen Logic ---
     val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-    val proximityWakeLock = remember {
-        powerManager.newWakeLock(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, "NeoConnect::ProximityLock")
-    }
+    val proximityWakeLock = remember { powerManager.newWakeLock(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, "NeoConnect::ProximityLock") }
 
     DisposableEffect(Unit) {
-        if (isVideoCall) {
-            (context as? android.app.Activity)?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        } else {
-            if (!proximityWakeLock.isHeld) proximityWakeLock.acquire()
-        }
+        if (isVideoCall) { (context as? android.app.Activity)?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) } 
+        else { if (!proximityWakeLock.isHeld) proximityWakeLock.acquire() }
         onDispose {
             (context as? android.app.Activity)?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             if (proximityWakeLock.isHeld) proximityWakeLock.release()
         }
     }
 
-    // Permission Launcher
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-        val granted = permissions.values.all { it }
-        if (granted) { startCall(callManager, localView, remoteView, roomId, isVideoCall) }
+        if (permissions.values.all { it }) { startCall(callManager, localView, remoteView, roomId, isVideoCall) }
     }
 
-    // Main Logic
     LaunchedEffect(Unit) {
-        callManager.onRemoteStream = { track ->
-            Handler(Looper.getMainLooper()).post {
-                try { track.addSink(remoteView); isRemoteVideoAdded = true } catch (e: Exception) { e.printStackTrace() }
-            }
-        }
+        callManager.onRemoteStream = { track -> Handler(Looper.getMainLooper()).post { try { track.addSink(remoteView); isRemoteVideoAdded = true } catch (e: Exception) {} } }
         callManager.onCallEnded = { Handler(Looper.getMainLooper()).post { onCallEnd() } }
         callManager.onConnected = { Handler(Looper.getMainLooper()).post { isCallConnected = true } }
-
         val perms = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
-        if (perms.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) {
-            startCall(callManager, localView, remoteView, roomId, isVideoCall)
-        } else { permissionLauncher.launch(perms) }
+        if (perms.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) { startCall(callManager, localView, remoteView, roomId, isVideoCall) } 
+        else { permissionLauncher.launch(perms) }
     }
 
-    // Timer
-    LaunchedEffect(isCallConnected) {
-        if (isCallConnected) { while (true) { delay(1000L); callDuration++ } }
-    }
+    LaunchedEffect(isCallConnected) { if (isCallConnected) while (true) { delay(1000L); callDuration++ } }
 
-    // UI
     Box(modifier = Modifier.fillMaxSize()) {
-        if (!isVideoCall || !isRemoteVideoAdded) {
-            Box(modifier = Modifier.fillMaxSize().background(Color.Black))
-        }
-
+        if (!isVideoCall || !isRemoteVideoAdded) { Box(modifier = Modifier.fillMaxSize().background(Color.Black)) }
+        
         if (isVideoCall) {
             AndroidView(factory = { remoteView }, modifier = Modifier.fillMaxSize())
-            if (!isRemoteVideoAdded) {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.primary)
-            }
-        }
-
-        if (isVideoCall) {
-            AndroidView(
-                factory = { localView },
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(16.dp)
-                    .size(120.dp, 180.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .clickable { callManager.switchCamera() }
-            )
+            if (!isRemoteVideoAdded) { CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = Color.Cyan) }
+            AndroidView(factory = { localView }, modifier = Modifier
+                .align(Alignment.TopEnd).padding(16.dp).size(120.dp, 180.dp)
+                .clip(RoundedCornerShape(16.dp)).clickable { callManager.switchCamera() })
         }
 
         if (!isVideoCall) {
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Icon(Icons.Default.Person, "Audio", modifier = Modifier.size(120.dp), tint = Color.White)
+            Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Icon(Icons.Default.Person, "Audio", Modifier.size(120.dp), Color.White)
                 Spacer(Modifier.height(16.dp))
                 Text(formatDuration(callDuration), color = Color.White, fontSize = 24.sp)
             }
         }
 
         if (isVideoCall && callDuration > 0L) {
-            Text(
-                formatDuration(callDuration),
-                color = Color.White,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 50.dp)
-                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                    .padding(8.dp)
-            )
+            Text(formatDuration(callDuration), color = Color.White, modifier = Modifier
+                .align(Alignment.TopCenter).padding(top = 50.dp)
+                .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp)).padding(8.dp))
         }
 
-        // --- Controls with 3 Dot Menu ---
         ControlBar(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 40.dp),
-            isMuted = isMuted,
-            isVideoOff = isVideoOff,
-            isSpeakerOn = isSpeakerOn,
-            isVideoCall = isVideoCall,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 40.dp),
+            isMuted = isMuted, isVideoOff = isVideoOff, isSpeakerOn = isSpeakerOn, isVideoCall = isVideoCall,
             onMuteToggle = { isMuted = !isMuted; callManager.toggleMute(isMuted) },
             onVideoToggle = { isVideoOff = !isVideoOff; callManager.toggleCamera(isVideoOff) },
             onSpeakerToggle = { isSpeakerOn = !isSpeakerOn; callManager.enableSpeaker(isSpeakerOn) },
             onEndCall = { callManager.endCall(); onCallEnd() },
-            onMenuClicked = { showBottomSheet = true }
+            onMenuClicked = { showMenu = true }
         )
-    }
 
-    // --- Bottom Sheet Menu ---
-    if (showBottomSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showBottomSheet = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = Color(0xFF1E1E1E)
+        // Custom Animated Bottom Menu
+        AnimatedVisibility(
+            visible = showMenu,
+            enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(300)),
+            exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(200)),
+            modifier = Modifier.align(Alignment.BottomCenter)
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Settings", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Filters Option
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp)
-                ) {
-                    Icon(Icons.Default.Lens, contentDescription = null, tint = Color.Cyan)
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Text("Video Filters", color = Color.White, fontSize = 18.sp)
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                // Filter List Row
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(filters) { filter ->
-                        FilterItem(filter = filter, isSelected = selectedFilter == filter.name) {
-                            selectedFilter = filter.name
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF1E1E1E), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                    .padding(16.dp)
+            ) {
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Settings", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.clickable { showMenu = false })
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Video Filters", color = Color.Cyan, fontSize = 16.sp)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        items(filters) { filter ->
+                            FilterItem(filter = filter, isSelected = selectedFilter == filter.name) {
+                                selectedFilter = filter.name
+                            }
                         }
                     }
+                    Spacer(modifier = Modifier.height(32.dp))
                 }
-                
-                Spacer(modifier = Modifier.height(32.dp))
             }
+        }
+        
+        if (showMenu) {
+            Box(modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable { showMenu = false })
         }
     }
 
@@ -238,18 +184,10 @@ fun CallScreen(
 
 @Composable
 fun FilterItem(filter: VideoFilter, isSelected: Boolean, onClick: () -> Unit) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clickable { onClick() }
-    ) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { onClick() }) {
         Box(
-            modifier = Modifier
-                .size(60.dp)
-                .clip(CircleShape)
-                .background(Color(android.graphics.Color.parseColor(filter.colorCode)))
-                .then(
-                    if (isSelected) Modifier.border(3.dp, Color.Cyan, CircleShape) else Modifier
-                )
+            modifier = Modifier.size(60.dp).clip(CircleShape).background(Color(android.graphics.Color.parseColor(filter.colorCode)))
+                .then(if (isSelected) Modifier.border(3.dp, Color.Cyan, CircleShape) else Modifier)
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(filter.name, color = Color.White, fontSize = 12.sp)
@@ -257,47 +195,19 @@ fun FilterItem(filter: VideoFilter, isSelected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-fun ControlBar(
-    modifier: Modifier = Modifier, 
-    isMuted: Boolean, 
-    isVideoOff: Boolean, 
-    isSpeakerOn: Boolean, 
-    isVideoCall: Boolean, 
-    onMuteToggle: () -> Unit, 
-    onVideoToggle: () -> Unit, 
-    onSpeakerToggle: () -> Unit, 
-    onEndCall: () -> Unit,
-    onMenuClicked: () -> Unit
-) {
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(50))
-            .background(Color.Black.copy(alpha = 0.7f))
-            .padding(horizontal = 12.dp, vertical = 12.dp), 
-        horizontalArrangement = Arrangement.spacedBy(12.dp), 
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+fun ControlBar(modifier: Modifier, isMuted: Boolean, isVideoOff: Boolean, isSpeakerOn: Boolean, isVideoCall: Boolean, onMuteToggle: () -> Unit, onVideoToggle: () -> Unit, onSpeakerToggle: () -> Unit, onEndCall: () -> Unit, onMenuClicked: () -> Unit) {
+    Row(modifier = modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.8f)).padding(horizontal = 12.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         ControlButton(icon = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic, background = if (isMuted) Color.Red else Color.DarkGray, onClick = onMuteToggle)
         ControlButton(icon = if (isSpeakerOn) Icons.Default.VolumeUp else Icons.Default.VolumeDown, background = if (isSpeakerOn) Color(0xFF4CAF50) else Color.DarkGray, onClick = onSpeakerToggle)
         if (isVideoCall) { ControlButton(icon = if (isVideoOff) Icons.Default.VideocamOff else Icons.Default.Videocam, background = if (isVideoOff) Color.Red else Color.DarkGray, onClick = onVideoToggle) }
-        
-        // 3-Dot Menu Button
         ControlButton(icon = Icons.Default.MoreVert, background = Color.DarkGray, onClick = onMenuClicked)
-        
         ControlButton(icon = Icons.Default.CallEnd, background = Color.Red, onClick = onEndCall)
     }
 }
 
 @Composable
 fun ControlButton(icon: androidx.compose.ui.graphics.vector.ImageVector, background: Color, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .size(50.dp)
-            .clip(CircleShape)
-            .background(background)
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center
-    ) {
+    Box(modifier = Modifier.size(50.dp).clip(CircleShape).background(background).clickable { onClick() }, contentAlignment = Alignment.Center) {
         Icon(icon, null, tint = Color.White, modifier = Modifier.size(24.dp))
     }
 }
@@ -307,10 +217,7 @@ private fun startCall(manager: CallManager, localView: SurfaceViewRenderer, remo
     val eglContext = manager.eglBase?.eglBaseContext ?: return
     try { remoteView.init(eglContext, null); remoteView.setZOrderMediaOverlay(false); remoteView.setMirror(false) } catch (e: Exception) {}
     manager.createStream(isVideoCall)
-    if (isVideoCall) {
-        try { localView.init(eglContext, null); localView.setZOrderMediaOverlay(true); localView.setMirror(true) } catch (e: Exception) {}
-        manager.startLocalVideoCapture(localView)
-    }
+    if (isVideoCall) { try { localView.init(eglContext, null); localView.setZOrderMediaOverlay(true); localView.setMirror(true) } catch (e: Exception) {}; manager.startLocalVideoCapture(localView) }
     manager.joinRoom(roomId)
 }
 
