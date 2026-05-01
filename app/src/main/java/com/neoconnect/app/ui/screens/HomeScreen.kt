@@ -66,15 +66,13 @@ fun HomeScreen(onJoinCall: (String, Boolean) -> Unit) {
                         label = { Text("Enter Room ID", color = Color.White) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
+                        colors = TextFieldDefaults.outlinedTextFieldColors(
+                            textColor = Color.White,
                             cursorColor = Color.Cyan,
                             focusedBorderColor = Color.Cyan,
                             unfocusedBorderColor = Color.Gray,
-                            focusedLabelColor = Color.Cyan
+                            focusedLabelColor = Color.Cyan,
+                            unfocusedLabelColor = Color.Gray
                         ),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true
