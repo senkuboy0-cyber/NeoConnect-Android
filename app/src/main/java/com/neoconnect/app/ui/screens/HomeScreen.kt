@@ -4,6 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,7 +20,7 @@ import com.neoconnect.app.ui.theme.NeoPrimary
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    onJoinCall: (String, Boolean) -> Unit // Changed: (roomId, isVideoCall)
+    onJoinCall: (String, Boolean) -> Unit
 ) {
     var roomId by remember { mutableStateOf("") }
 
