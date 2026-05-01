@@ -30,6 +30,7 @@ import androidx.core.content.ContextCompat
 import com.neoconnect.app.webrtc.CallManager
 import kotlinx.coroutines.delay
 import org.webrtc.SurfaceViewRenderer
+import org.webrtc.VideoTrack
 import java.util.concurrent.TimeUnit
 
 @Composable
@@ -95,8 +96,9 @@ fun CallScreen(
 
     // Main Logic
     LaunchedEffect(Unit) {
-        callManager.onRemoteStream = { track ->
+        callManager.onRemoteStream = { track: VideoTrack ->
             Handler(Looper.getMainLooper()).post {
+                remoteView.clearImage()
                 track.addSink(remoteView)
                 isRemoteVideoAdded = true
             }
@@ -146,56 +148,26 @@ fun CallScreen(
         if (isVideoCall) {
             AndroidView(
                 factory = { localView },
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(16.dp)
-                    .size(120.dp, 180.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .clickable { callManager.switchCamera() }
+                modifier = Modifier.align(Alignment.TopEnd).padding(16.dp).size(120.dp, 180.dp)
+                    .clip(RoundedCornerShape(16.dp)).clickable { callManager.switchCamera() }
             )
         }
 
         if (!isVideoCall) {
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Person,
-                    contentDescription = "Audio",
-                    modifier = Modifier.size(120.dp),
-                    tint = Color.White
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = formatDuration(callDuration),
-                    color = Color.White,
-                    fontSize = 24.sp
-                )
+            Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Icon(Icons.Default.Person, "Audio", Modifier.size(120.dp), Color.White)
+                Spacer(Modifier.height(16.dp))
+                Text(formatDuration(callDuration), color = Color.White, fontSize = 24.sp)
             }
         }
 
         if (isVideoCall && callDuration > 0L) {
-            Text(
-                text = formatDuration(callDuration),
-                color = Color.White,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 50.dp)
-                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                    .padding(8.dp)
-            )
+            Text(formatDuration(callDuration), color = Color.White, modifier = Modifier.align(Alignment.TopCenter).padding(top = 50.dp)
+                .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp)).padding(8.dp))
         }
 
-        ControlBar(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 40.dp),
-            isMuted = isMuted,
-            isVideoOff = isVideoOff,
-            isSpeakerOn = isSpeakerOn,
-            isVideoCall = isVideoCall,
+        ControlBar(modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 40.dp),
+            isMuted = isMuted, isVideoOff = isVideoOff, isSpeakerOn = isSpeakerOn, isVideoCall = isVideoCall,
             onMuteToggle = { isMuted = !isMuted; callManager.toggleMute(isMuted) },
             onVideoToggle = { isVideoOff = !isVideoOff; callManager.toggleCamera(isVideoOff) },
             onSpeakerToggle = { isSpeakerOn = !isSpeakerOn; callManager.enableSpeaker(isSpeakerOn) },
@@ -212,23 +184,35 @@ fun CallScreen(
     }
 }
 
-private fun startCall(manager: CallManager, localView: SurfaceViewRenderer, remoteView: SurfaceViewRenderer, roomId: String, isVideoCall: Boolean) {
+// Updated startCall function with try-catch
+private fun startCall(
+    manager: CallManager,
+    localView: SurfaceViewRenderer,
+    remoteView: SurfaceViewRenderer,
+    roomId: String,
+    isVideoCall: Boolean
+) {
     manager.init()
-    val eglContext = manager.eglBase?.eglBaseContext
-    if (eglContext != null) {
+    val eglContext = manager.eglBase?.eglBaseContext ?: return
+
+    // Already initialized হলে আবার init করবে না বা Error হলে Catch করবে
+    try {
         remoteView.init(eglContext, null)
         remoteView.setZOrderMediaOverlay(false)
         remoteView.setMirror(false)
-    }
+    } catch (e: Exception) {}
+
     manager.createStream(isVideoCall)
+
     if (isVideoCall) {
-        if (eglContext != null) {
+        try {
             localView.init(eglContext, null)
             localView.setZOrderMediaOverlay(true)
             localView.setMirror(true)
-            manager.startLocalVideoCapture(localView)
-        }
+        } catch (e: Exception) {}
+        manager.startLocalVideoCapture(localView)
     }
+
     manager.joinRoom(roomId)
 }
 
@@ -239,69 +223,18 @@ fun formatDuration(seconds: Long): String {
 }
 
 @Composable
-fun ControlBar(
-    modifier: Modifier = Modifier,
-    isMuted: Boolean,
-    isVideoOff: Boolean,
-    isSpeakerOn: Boolean,
-    isVideoCall: Boolean,
-    onMuteToggle: () -> Unit,
-    onVideoToggle: () -> Unit,
-    onSpeakerToggle: () -> Unit,
-    onEndCall: () -> Unit
-) {
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(50))
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        ControlButton(
-            icon = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
-            background = if (isMuted) Color.Red else Color.DarkGray,
-            onClick = onMuteToggle
-        )
-        ControlButton(
-            icon = if (isSpeakerOn) Icons.Default.VolumeUp else Icons.Default.VolumeDown,
-            background = if (isSpeakerOn) Color(0xFF4CAF50) else Color.DarkGray,
-            onClick = onSpeakerToggle
-        )
-        if (isVideoCall) {
-            ControlButton(
-                icon = if (isVideoOff) Icons.Default.VideocamOff else Icons.Default.Videocam,
-                background = if (isVideoOff) Color.Red else Color.DarkGray,
-                onClick = onVideoToggle
-            )
-        }
-        ControlButton(
-            icon = Icons.Default.CallEnd,
-            background = Color.Red,
-            onClick = onEndCall
-        )
+fun ControlBar(modifier: Modifier, isMuted: Boolean, isVideoOff: Boolean, isSpeakerOn: Boolean, isVideoCall: Boolean, onMuteToggle: () -> Unit, onVideoToggle: () -> Unit, onSpeakerToggle: () -> Unit, onEndCall: () -> Unit) {
+    Row(modifier = modifier.clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)).padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        ControlButton(icon = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic, background = if (isMuted) Color.Red else Color.DarkGray, onClick = onMuteToggle)
+        ControlButton(icon = if (isSpeakerOn) Icons.Default.VolumeUp else Icons.Default.VolumeDown, background = if (isSpeakerOn) Color(0xFF4CAF50) else Color.DarkGray, onClick = onSpeakerToggle)
+        if (isVideoCall) { ControlButton(icon = if (isVideoOff) Icons.Default.VideocamOff else Icons.Default.Videocam, background = if (isVideoOff) Color.Red else Color.DarkGray, onClick = onVideoToggle) }
+        ControlButton(icon = Icons.Default.CallEnd, background = Color.Red, onClick = onEndCall)
     }
 }
 
 @Composable
-fun ControlButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    background: Color,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .size(50.dp)
-            .clip(CircleShape)
-            .background(background)
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier.size(24.dp)
-        )
+fun ControlButton(icon: androidx.compose.ui.graphics.vector.ImageVector, background: Color, onClick: () -> Unit) {
+    Box(modifier = Modifier.size(50.dp).clip(CircleShape).background(background).clickable { onClick() }, contentAlignment = Alignment.Center) {
+        Icon(icon, null, tint = Color.White, modifier = Modifier.size(24.dp))
     }
 }
