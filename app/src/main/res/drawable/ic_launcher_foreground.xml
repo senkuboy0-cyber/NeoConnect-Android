@@ -3,23 +3,38 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    
-    <!-- Gradient Definition -->
-    <group android:translateX="14" android:translateY="14">
-        <!-- Cloud Shape -->
+
+    <!-- ক্লাউডটিকে মাঝখানে আনার জন্য Group ব্যবহার করা হলো -->
+    <group
+        android:translateX="14"
+        android:translateY="14"
+        android:scaleX="0.85"
+        android:scaleY="0.85">
+        <!-- ক্লাউড শেইপ (Cloud Shape) -->
         <path
-            android:pathData="M30 65 Q20 65 20 55 Q20 45 30 45 Q30 30 45 28 Q60 25 70 40 Q85 38 88 50 Q90 65 75 68 Z"
-            android:fillColor="#4facfe"/>
-        <!-- Inner Shadow/Fill Variation for Depth -->
+            android:pathData="M30,65 Q18,65 18,52 Q18,42 30,42 Q32,26 50,26 Q68,26 72,42 Q86,42 86,55 Q86,68 70,68 L30,68 Q18,68 18,55"
+            android:fillColor="#4facfe"
+            android:strokeWidth="1"/>
+
+        <!-- ভেতরের ছায়া (Inner depth) -->
         <path
-            android:pathData="M30 65 Q20 65 20 55 Q20 45 30 45 Q30 30 45 28 Q60 25 70 40 Q85 38 88 50 Q90 65 75 68 Z"
+            android:pathData="M30,65 Q18,65 18,52 Q18,42 30,42 Q32,26 50,26 Q68,26 72,42 Q86,42 86,55 Q86,68 70,68 L30,68 Q18,68 18,55"
             android:fillColor="#00f2fe"
-            android:fillAlpha="0.3"/>
-            
-        <!-- Video Icon inside Cloud -->
-        <group android:translateX="36" android:translateY="42">
-            <rect x="0" y="0" width="24" height="16" rx="3" fill="#FFFFFF" android:fillAlpha="0.95"/>
-            <path d="M24 4 L32 0 L32 16 L24 12 Z" fill="#FFFFFF" android:fillAlpha="0.95"/>
+            android:fillAlpha="0.4"/>
+
+        <!-- ভিডিও আইকন (Video Icon) -->
+        <!-- ক্লাউডের মাঝখানে পজিশন করা হলো -->
+        <group
+            android:translateX="38"
+            android:translateY="40">
+            <!-- ক্যামেরা বডি -->
+            <path
+                android:pathData="M0,3 L0,17 Q0,20 3,20 L17,20 Q20,20 20,17 L20,3 Q20,0 17,0 L3,0 Q0,0 0,3 Z"
+                android:fillColor="#FFFFFF"/>
+            <!-- ক্যামেরা লেন্স অংশ -->
+            <path
+                android:pathData="M22,4 L30,0 L30,20 L22,16 Z"
+                android:fillColor="#FFFFFF"/>
         </group>
     </group>
 </vector>

@@ -12,26 +12,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.neoconnect.app.R
-import com.neoconnect.app.ui.theme.Poppins
 import kotlinx.coroutines.delay
 
 @Composable
 fun SplashScreen(onNavigateToHome: () -> Unit) {
     var startAnimation by remember { mutableStateOf(false) }
-    
-    // Alpha Animation
+
     val alphaAnim = animateFloatAsState(
         targetValue = if (startAnimation) 1f else 0f,
-        animationSpec = tween(durationMillis = 1000),
-        finishedListener = { }
+        animationSpec = tween(durationMillis = 1000)
     )
-    
-    // Scale Animation (Bounce Effect)
+
     val scaleAnim = animateFloatAsState(
-        targetValue = if (startAnimation) 1f else 0.5f,
+        targetValue = if (startAnimation) 1f else 0.8f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessLow
@@ -56,31 +53,28 @@ fun SplashScreen(onNavigateToHome: () -> Unit) {
                 .alpha(alphaAnim.value)
                 .scale(scaleAnim.value)
         ) {
-            // App Logo (Cloud Connect)
+            // লোগোর সাইজ বড় করা হলো
             Image(
                 painter = painterResource(id = R.drawable.ic_launcher_foreground),
                 contentDescription = "App Logo",
-                modifier = Modifier.size(200.dp)
+                modifier = Modifier.size(250.dp)
             )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // App Name with Custom Font
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             Text(
                 text = "NeoConnect",
                 color = MaterialTheme.colorScheme.primary,
-                fontSize = 42.sp,
-                fontFamily = Poppins
+                fontSize = 36.sp,
+                fontWeight = FontWeight.Bold
             )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Tagline
+
+            Spacer(modifier = Modifier.height(4.dp))
+
             Text(
                 text = "Cloud Connect",
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                fontSize = 16.sp,
-                fontFamily = Poppins
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                fontSize = 16.sp
             )
         }
     }
