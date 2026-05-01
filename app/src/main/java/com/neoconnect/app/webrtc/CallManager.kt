@@ -5,6 +5,7 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.media.AudioDeviceInfo
 import android.os.Build
 import android.util.Log
 import org.json.JSONObject
@@ -41,7 +42,6 @@ class CallManager(private val context: Context) {
         audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         savedAudioMode = audioManager?.mode ?: AudioManager.MODE_NORMAL
         
-        // Initialize WebRTC
         if (eglBase == null) {
             eglBase = EglBase.create()
         }
@@ -61,8 +61,6 @@ class CallManager(private val context: Context) {
     @SuppressLint("MissingPermission")
     fun startLocalVideoCapture(localView: SurfaceViewRenderer) {
         val ctx = eglBase?.eglBaseContext ?: return
-        
-        // Video Source & Track
         val videoSource = factory?.createVideoSource(false)
         videoCapturer = createCameraCapturer()
         val surfaceHelper = SurfaceTextureHelper.create("CaptureThread", ctx)
@@ -72,12 +70,10 @@ class CallManager(private val context: Context) {
         
         localVideoTrack = factory?.createVideoTrack("video0", videoSource)
         localVideoTrack?.addSink(localView)
-        
         localStream?.addTrack(localVideoTrack)
     }
     
     fun startLocalAudio() {
-        // Audio Constraints for Noise and Echo cancellation
         val audioConstraints = MediaConstraints().apply {
             mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
             mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "true"))
@@ -119,6 +115,7 @@ class CallManager(private val context: Context) {
             val data = args[0] as JSONObject
             otherUserId = data.getString("otherUserId")
             val shouldCreateOffer = data.getBoolean("shouldCreateOffer")
+            audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
             createPeerConnection()
             if (shouldCreateOffer) createOffer()
             onConnected?.invoke()
@@ -177,7 +174,6 @@ class CallManager(private val context: Context) {
                 socket?.emit("ice-candidate", json)
             }
 
-            // Receiver থেকে সরাসরি Track নেওয়া হয়েছে
             override fun onAddTrack(receiver: RtpReceiver?, streams: Array<MediaStream>?) {
                 val track = receiver?.track()
                 if (track is VideoTrack) {
@@ -244,14 +240,44 @@ class CallManager(private val context: Context) {
     fun toggleCamera(off: Boolean) { localVideoTrack?.setEnabled(!off) }
     fun switchCamera() { (videoCapturer as? CameraVideoCapturer)?.switchCamera(null) }
     
+    // --- Audio Logic Updated ---
+    
     private fun setupAudio(isVideoCall: Boolean) {
         audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
-        audioManager?.isSpeakerphoneOn = isVideoCall
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val devices = audioManager?.availableCommunicationDevices
+            val speakerDevice = devices?.firstOrNull {
+                it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+            }
+            val earDevice = devices?.firstOrNull {
+                it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+            }
+            if (isVideoCall) {
+                speakerDevice?.let { audioManager?.setCommunicationDevice(it) }
+            } else {
+                earDevice?.let { audioManager?.setCommunicationDevice(it) }
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager?.isSpeakerphoneOn = isVideoCall
+        }
         setAudioFocus(true)
     }
 
     fun enableSpeaker(enable: Boolean) {
-        audioManager?.isSpeakerphoneOn = enable
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val devices = audioManager?.availableCommunicationDevices
+            val device = if (enable) {
+                devices?.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+            } else {
+                devices?.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
+            }
+            device?.let { audioManager?.setCommunicationDevice(it) }
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager?.isSpeakerphoneOn = enable
+        }
     }
 
     private fun setAudioFocus(enable: Boolean) {
@@ -271,7 +297,11 @@ class CallManager(private val context: Context) {
 
     fun endCall() {
         setAudioFocus(false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            audioManager?.clearCommunicationDevice()
+        }
         audioManager?.mode = savedAudioMode
+        @Suppress("DEPRECATION")
         audioManager?.isSpeakerphoneOn = false
         
         videoCapturer?.stopCapture()
