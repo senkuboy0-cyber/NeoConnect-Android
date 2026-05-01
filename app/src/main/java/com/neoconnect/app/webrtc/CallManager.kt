@@ -23,7 +23,8 @@ class CallManager(private val context: Context) {
     
     private var audioManager: AudioManager? = null
     private var audioFocusRequest: AudioFocusRequest? = null
-    var eglBase: EglBase? = null // Public করা হলো যাতে UI থেকে access করা যায়
+    var eglBase: EglBase? = null
+    private var savedAudioMode = 0
 
     var onRemoteStream: ((VideoTrack) -> Unit)? = null
     var onCallEnded: (() -> Unit)? = null
@@ -38,6 +39,7 @@ class CallManager(private val context: Context) {
 
     fun init() {
         audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        savedAudioMode = audioManager?.mode ?: AudioManager.MODE_NORMAL
         
         // Initialize WebRTC
         eglBase = EglBase.create()
@@ -57,8 +59,12 @@ class CallManager(private val context: Context) {
     @SuppressLint("MissingPermission")
     fun startLocalStream(localView: SurfaceViewRenderer, isVideoCall: Boolean = true) {
         val ctx = eglBase?.eglBaseContext ?: return
+        
+        // Init Local View
         localView.init(ctx, null)
         localView.setZOrderMediaOverlay(true)
+        localView.setEnableHardwareScaler(true)
+        localView.setMirror(true) // Self view mirror
         
         val surfaceHelper = SurfaceTextureHelper.create("CaptureThread", ctx)
 
@@ -84,8 +90,7 @@ class CallManager(private val context: Context) {
             localStream?.addTrack(localVideoTrack)
         }
         
-        setAudioFocus(true)
-        enableSpeaker(true) // Video Call এ default Speaker On
+        setupAudio(isVideoCall) // Setup Audio based on call type
     }
 
     private fun createCameraCapturer(): VideoCapturer? {
@@ -232,9 +237,17 @@ class CallManager(private val context: Context) {
     fun toggleCamera(off: Boolean) { localVideoTrack?.setEnabled(!off) }
     fun switchCamera() { (videoCapturer as? CameraVideoCapturer)?.switchCamera(null) }
     
-    // Speaker Control
-    fun enableSpeaker(enable: Boolean) {
+    // Audio Management
+    private fun setupAudio(isVideoCall: Boolean) {
         audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
+        
+        // Video Call e Speaker On, Audio Call e Earpiece
+        audioManager?.isSpeakerphoneOn = isVideoCall
+        
+        setAudioFocus(true)
+    }
+
+    fun enableSpeaker(enable: Boolean) {
         audioManager?.isSpeakerphoneOn = enable
     }
 
@@ -251,13 +264,13 @@ class CallManager(private val context: Context) {
             if (enable) audioManager?.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN)
             else audioManager?.abandonAudioFocus(null)
         }
-        // Android 9 Fix
-        audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
     }
 
     fun endCall() {
         setAudioFocus(false)
-        enableSpeaker(false)
+        audioManager?.mode = savedAudioMode // Restore old mode
+        audioManager?.isSpeakerphoneOn = false
+        
         videoCapturer?.stopCapture()
         videoCapturer?.dispose()
         peerConnection?.close()

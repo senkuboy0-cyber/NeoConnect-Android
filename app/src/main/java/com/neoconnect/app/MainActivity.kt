@@ -46,7 +46,7 @@ fun SetupNavigation(navController: NavHostController) {
             
             CallScreen(roomId = roomId, isVideoCall = isVideoCall) {
                 navController.navigate("home") {
-                    popUpTo("home") { inclusive = true }
+                    popUpTo("home") { inclusive = false }
                 }
             }
         }

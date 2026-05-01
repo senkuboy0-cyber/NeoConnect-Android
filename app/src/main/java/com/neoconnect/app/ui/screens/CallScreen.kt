@@ -3,7 +3,6 @@ package com.neoconnect.app.ui.screens
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.media.projection.MediaProjectionManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -21,11 +20,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.neoconnect.app.webrtc.CallManager
+import kotlinx.coroutines.delay
 import org.webrtc.SurfaceViewRenderer
 import org.webrtc.VideoTrack
+import java.util.concurrent.TimeUnit
 
 @Composable
 fun CallScreen(
@@ -39,42 +41,45 @@ fun CallScreen(
     var isMuted by remember { mutableStateOf(false) }
     var isVideoOff by remember { mutableStateOf(false) }
     var isRemoteVideoAdded by remember { mutableStateOf(false) }
-    var isSpeakerOn by remember { mutableStateOf(true) }
-
+    var isSpeakerOn by remember { mutableStateOf(isVideoCall) } // Video hole true, Audio hole false
+    var callDuration by remember { mutableStateOf(0L) }
+    
     // Views
     val localView = remember { SurfaceViewRenderer(context) }
     val remoteView = remember { SurfaceViewRenderer(context) }
-
+    
     // Manager
     val callManager = remember { CallManager(context) }
 
-    // Screen Share Logic
-    val mediaProjectionManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-    
+    // Timer Logic
+    LaunchedEffect(key1 = callManager.onConnected) {
+        if (isRemoteVideoAdded || true) { // Start timer when connected
+            while (true) {
+                delay(1000L)
+                callDuration++
+            }
+        }
+    }
+
     // Permissions
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val granted = permissions.values.all { it }
         if (granted) {
-            initCall(callManager, localView, remoteView, roomId, isVideoCall, onCallEnd) { 
+            initializeAndStartCall(callManager, localView, remoteView, roomId, isVideoCall, onCallEnd) { 
                 isRemoteVideoAdded = true 
             }
         }
     }
 
     LaunchedEffect(Unit) {
-        // Initialize Remote View
-        callManager.eglBase?.eglBaseContext?.let {
-            remoteView.init(it, null)
-        }
-        
         val permissions = arrayOf(
             Manifest.permission.CAMERA,
             Manifest.permission.RECORD_AUDIO
         )
         if (permissions.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) {
-            initCall(callManager, localView, remoteView, roomId, isVideoCall, onCallEnd) { 
+            initializeAndStartCall(callManager, localView, remoteView, roomId, isVideoCall, onCallEnd) { 
                 isRemoteVideoAdded = true 
             }
         } else {
@@ -84,6 +89,11 @@ fun CallScreen(
 
     // UI Layout
     Box(modifier = Modifier.fillMaxSize()) {
+        // Background Color
+        if (!isVideoCall) {
+            Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+        }
+
         // Remote Video (Full Screen)
         if (isVideoCall) {
             if (isRemoteVideoAdded) {
@@ -114,11 +124,10 @@ fun CallScreen(
             )
         } else {
             // Audio Call UI
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background),
-                contentAlignment = Alignment.Center
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.Person,
@@ -126,7 +135,27 @@ fun CallScreen(
                     modifier = Modifier.size(120.dp),
                     tint = Color.White
                 )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = formatDuration(callDuration),
+                    color = Color.White,
+                    fontSize = 24.sp,
+                    style = MaterialTheme.typography.titleLarge
+                )
             }
+        }
+
+        // Timer for Video Call (Top Center)
+        if (isVideoCall && callDuration > 0L) {
+            Text(
+                text = formatDuration(callDuration),
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 50.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                    .padding(8.dp)
+            )
         }
 
         // Controls
@@ -166,7 +195,7 @@ fun CallScreen(
     }
 }
 
-private fun initCall(
+private fun initializeAndStartCall(
     manager: CallManager,
     localView: SurfaceViewRenderer,
     remoteView: SurfaceViewRenderer,
@@ -184,6 +213,13 @@ private fun initCall(
         onRemote()
     }
     manager.onCallEnded = { onEnd() }
+}
+
+// Helper to format time
+fun formatDuration(seconds: Long): String {
+    val mins = TimeUnit.SECONDS.toMinutes(seconds)
+    val secs = seconds - TimeUnit.MINUTES.toSeconds(mins)
+    return String.format("%02d:%02d", mins, secs)
 }
 
 @Composable
