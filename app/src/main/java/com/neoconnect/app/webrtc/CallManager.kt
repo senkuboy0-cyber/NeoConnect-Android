@@ -78,7 +78,9 @@ class CallManager(private val context: Context) {
         localStream?.addTrack(localVideoTrack)
         
         // Save sender for screen share replacement
-        videoSender = peerConnection?.senders?.find { it.track()?.kind() == MediaStreamTrack.VIDEO_TRACK_KIND }
+        localVideoTrack?.let {
+            videoSender = peerConnection?.senders?.find { sender -> sender.track()?.id() == it.id() }
+        }
     }
 
     fun startLocalAudio() {
@@ -109,27 +111,27 @@ class CallManager(private val context: Context) {
         
         val ctx = eglBase?.eglBaseContext ?: return
         
-        // Stop and Save Camera
+        // Stop Camera and Save
         videoCapturer?.stopCapture()
         savedCapturer = videoCapturer
         savedVideoSource = videoSource
-        
+        videoCapturer = null
+
         // Start Screen Capture
-        val screenCapturer = ScreenCapturerAndroid(data, MediaProjection.Callback {})
+        val screenCapturer = ScreenCapturerAndroid(data, object : MediaProjection.Callback() {})
         val surfaceHelper = SurfaceTextureHelper.create("ScreenShareThread", ctx)
-        videoSource = factory?.createVideoSource(true)
+        if (videoSource == null) videoSource = factory?.createVideoSource(true)
+        
         screenCapturer.initialize(surfaceHelper, context, videoSource?.capturerObserver)
         screenCapturer.startCapture(1280, 720, 30)
         videoCapturer = screenCapturer
-        
-        // Update Track
-        localVideoTrack?.dispose()
-        localVideoTrack = factory?.createVideoTrack("screenTrack", videoSource)
-        
-        // Replace track in sender
-        videoSender?.replaceTrack(localVideoTrack)
-        
         isScreenSharing = true
+        
+        val screenTrack = factory?.createVideoTrack("screenTrack", videoSource)
+        
+        // setTrack এর বদলে replaceTrack ব্যবহার করা হলো
+        videoSender?.replaceTrack(screenTrack)
+        
         Log.d("CallManager", "Screen Share Started")
     }
 
@@ -139,6 +141,7 @@ class CallManager(private val context: Context) {
         // Stop screen capture
         videoCapturer?.stopCapture()
         videoCapturer?.dispose()
+        videoCapturer = null
         
         // Restore Camera
         val ctx = eglBase?.eglBaseContext ?: return
@@ -152,7 +155,7 @@ class CallManager(private val context: Context) {
         localVideoTrack = factory?.createVideoTrack("video0", videoSource)
         localVideoTrack?.addSink(localView)
         
-        // Replace track in sender
+        // replaceTrack ব্যবহার করা হলো
         videoSender?.replaceTrack(localVideoTrack)
         
         isScreenSharing = false
@@ -208,11 +211,7 @@ class CallManager(private val context: Context) {
                 json.put("candidate", c); socket?.emit("ice-candidate", json)
             }
             override fun onAddTrack(receiver: RtpReceiver?, streams: Array<MediaStream>?) {
-                val track = receiver?.track() ?: return
-                if (track is VideoTrack) {
-                    track.setEnabled(true)
-                    onRemoteStream?.invoke(track)
-                }
+                streams?.firstOrNull()?.videoTracks?.firstOrNull()?.let { onRemoteStream?.invoke(it) }
             }
             override fun onSignalingChange(state: PeerConnection.SignalingState?) {}
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) { if (state == PeerConnection.IceConnectionState.DISCONNECTED || state == PeerConnection.IceConnectionState.CLOSED) onCallEnded?.invoke() }
@@ -222,6 +221,7 @@ class CallManager(private val context: Context) {
             override fun onRemoveStream(stream: MediaStream?) {}
             override fun onDataChannel(channel: DataChannel?) {}
             override fun onRenegotiationNeeded() {}
+            override fun onIceConnectionReceivingChange(receiving: Boolean) {}
         })
 
         localStream?.let { stream ->
