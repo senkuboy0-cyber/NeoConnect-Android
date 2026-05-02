@@ -28,8 +28,6 @@ class CallManager(private val context: Context) {
     private var videoSource: VideoSource? = null
     private var videoSender: RtpSender? = null
     private var isScreenSharing = false
-    private var savedVideoSource: VideoSource? = null
-    private var savedCapturer: VideoCapturer? = null
 
     private var audioManager: AudioManager? = null
     private var audioFocusRequest: AudioFocusRequest? = null
@@ -68,8 +66,7 @@ class CallManager(private val context: Context) {
         val ctx = eglBase?.eglBaseContext ?: return
         videoSource = factory?.createVideoSource(false)
         videoCapturer = createCameraCapturer()
-        val surfaceHelper = SurfaceTextureHelper.create("CaptureThread", ctx)
-        
+        val surfaceHelper = SurfaceTextureHelper.create("CaptureThread", ctx)        
         videoCapturer?.initialize(surfaceHelper, context, videoSource?.capturerObserver)
         videoCapturer?.startCapture(1280, 720, 30)
         
@@ -78,17 +75,73 @@ class CallManager(private val context: Context) {
         localStream?.addTrack(localVideoTrack)
         
         // Save sender for screen share replacement
-        localVideoTrack?.let {
-            videoSender = peerConnection?.senders?.find { sender -> sender.track()?.id() == it.id() }
-        }
+        findVideoSender()
+    }
+    
+    private fun findVideoSender() {
+        // এখানে PeerConnection থেকে ভিডিও সেন্ডার খুঁজে বের করা হচ্ছে
+        videoSender = peerConnection?.senders?.find { it.track()?.kind() == MediaStreamTrack.VIDEO_TRACK_KIND }
     }
 
+    // --- Screen Share Logic ---
+    fun startScreenShare(data: Intent) {
+        if (isScreenSharing) return
+        val ctx = eglBase?.eglBaseContext ?: return
+        
+        // Stop Camera
+        try {
+            videoCapturer?.stopCapture()
+            videoCapturer?.dispose()
+        } catch (e: Exception) { e.printStackTrace() }
+        videoCapturer = null
+
+        // Start Screen Capture
+        val screenCapturer = ScreenCapturerAndroid(data, object : MediaProjection.Callback() {})
+        val surfaceHelper = SurfaceTextureHelper.create("ScreenShareThread", ctx)
+        
+        videoSource = factory?.createVideoSource(true)
+        screenCapturer.initialize(surfaceHelper, context, videoSource?.capturerObserver)
+        screenCapturer.startCapture(1280, 720, 30)
+        videoCapturer = screenCapturer
+        isScreenSharing = true
+        
+        val screenTrack = factory?.createVideoTrack("screenTrack", videoSource)
+        
+        // এখানে সঠিক মেথড setTrack ব্যবহার করা হয়েছে
+        videoSender?.setTrack(screenTrack, false)        
+        Log.d("CallManager", "Screen Share Started")
+    }
+
+    fun stopScreenShare(localView: SurfaceViewRenderer) {
+        if (!isScreenSharing) return
+        val ctx = eglBase?.eglBaseContext ?: return
+
+        try {
+            videoCapturer?.stopCapture()
+            videoCapturer?.dispose()
+        } catch (e: Exception) { e.printStackTrace() }
+        videoCapturer = null
+        
+        // Restart Camera
+        videoSource = factory?.createVideoSource(false)
+        videoCapturer = createCameraCapturer()
+        val surfaceHelper = SurfaceTextureHelper.create("CaptureThread", ctx)
+        videoCapturer?.initialize(surfaceHelper, context, videoSource?.capturerObserver)
+        videoCapturer?.startCapture(1280, 720, 30)
+        
+        localVideoTrack = factory?.createVideoTrack("video0", videoSource)
+        localVideoTrack?.addSink(localView)
+        
+        // এখানেও setTrack ব্যবহার করা হয়েছে
+        videoSender?.setTrack(localVideoTrack, false)        
+        isScreenSharing = false
+        Log.d("CallManager", "Screen Share Stopped")
+    }
+    
     fun startLocalAudio() {
-        val audioConstraints = MediaConstraints().apply {
-            mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
-            mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "true"))
-            mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl", "true"))
-        }
+        val audioConstraints = MediaConstraints()
+        audioConstraints.mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
+        audioConstraints.mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "true"))
         val audioSource = factory?.createAudioSource(audioConstraints)
         localAudioTrack = factory?.createAudioTrack("audio0", audioSource)
         localStream?.addTrack(localAudioTrack)
@@ -103,63 +156,6 @@ class CallManager(private val context: Context) {
     private fun createCameraCapturer(): VideoCapturer? {
         val enumerator = Camera2Enumerator(context)
         return enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) }?.let { enumerator.createCapturer(it, null) }
-    }
-
-    // --- Screen Share Logic ---
-    fun startScreenShare(data: Intent) {
-        if (isScreenSharing) return
-        
-        val ctx = eglBase?.eglBaseContext ?: return
-        
-        // Stop Camera and Save
-        videoCapturer?.stopCapture()
-        savedCapturer = videoCapturer
-        savedVideoSource = videoSource
-        videoCapturer = null
-
-        // Start Screen Capture
-        val screenCapturer = ScreenCapturerAndroid(data, object : MediaProjection.Callback() {})
-        val surfaceHelper = SurfaceTextureHelper.create("ScreenShareThread", ctx)
-        if (videoSource == null) videoSource = factory?.createVideoSource(true)
-        
-        screenCapturer.initialize(surfaceHelper, context, videoSource?.capturerObserver)
-        screenCapturer.startCapture(1280, 720, 30)
-        videoCapturer = screenCapturer
-        isScreenSharing = true
-        
-        val screenTrack = factory?.createVideoTrack("screenTrack", videoSource)
-        
-        // setTrack এর বদলে replaceTrack ব্যবহার করা হলো
-        videoSender?.replaceTrack(screenTrack)
-        
-        Log.d("CallManager", "Screen Share Started")
-    }
-
-    fun stopScreenShare(localView: SurfaceViewRenderer) {
-        if (!isScreenSharing) return
-        
-        // Stop screen capture
-        videoCapturer?.stopCapture()
-        videoCapturer?.dispose()
-        videoCapturer = null
-        
-        // Restore Camera
-        val ctx = eglBase?.eglBaseContext ?: return
-        videoSource = savedVideoSource ?: factory?.createVideoSource(false)
-        videoCapturer = savedCapturer
-        
-        val surfaceHelper = SurfaceTextureHelper.create("CaptureThread", ctx)
-        videoCapturer?.initialize(surfaceHelper, context, videoSource?.capturerObserver)
-        videoCapturer?.startCapture(1280, 720, 30)
-        
-        localVideoTrack = factory?.createVideoTrack("video0", videoSource)
-        localVideoTrack?.addSink(localView)
-        
-        // replaceTrack ব্যবহার করা হলো
-        videoSender?.replaceTrack(localVideoTrack)
-        
-        isScreenSharing = false
-        Log.d("CallManager", "Screen Share Stopped, Camera Resumed")
     }
 
     fun joinRoom(roomId: String) {
@@ -226,11 +222,11 @@ class CallManager(private val context: Context) {
 
         localStream?.let { stream ->
             stream.audioTracks.forEach { peerConnection?.addTrack(it) }
-            stream.videoTracks.forEach { 
-                peerConnection?.addTrack(it)
-                videoSender = peerConnection?.senders?.find { sender -> sender.track()?.id() == it.id() }
-            }
+            stream.videoTracks.forEach { peerConnection?.addTrack(it) }
         }
+        
+        // কানেকশন তৈরি হওয়ার পর সেন্ডার খুঁজে রাখা
+        findVideoSender()
     }
 
     private fun createOffer() {
@@ -301,13 +297,11 @@ class CallManager(private val context: Context) {
 
     fun endCall() {
         setAudioFocus(false)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) { audioManager?.clearCommunicationDevice() }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) audioManager?.clearCommunicationDevice()
         audioManager?.mode = savedAudioMode
         @Suppress("DEPRECATION") audioManager?.isSpeakerphoneOn = false
         
-        videoCapturer?.stopCapture(); videoCapturer?.dispose()
-        savedCapturer?.dispose()
-        
+        try { videoCapturer?.stopCapture(); videoCapturer?.dispose() } catch (e: Exception) { e.printStackTrace() }
         peerConnection?.close(); socket?.disconnect()
         onCallEnded?.invoke()
     }
