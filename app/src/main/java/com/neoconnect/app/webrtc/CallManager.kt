@@ -2,10 +2,11 @@ package com.neoconnect.app.webrtc
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
-import android.media.AudioDeviceInfo
 import android.os.Build
 import android.util.Log
 import org.json.JSONObject
@@ -22,6 +23,13 @@ class CallManager(private val context: Context) {
     private var videoCapturer: VideoCapturer? = null
     private var otherUserId: String? = null
     
+    // Screen Share Variables
+    private var videoSource: VideoSource? = null
+    private var videoSender: RtpSender? = null
+    private var isScreenSharing = false
+    private var savedVideoSource: VideoSource? = null
+    private var savedCapturer: VideoCapturer? = null
+
     private var audioManager: AudioManager? = null
     private var audioFocusRequest: AudioFocusRequest? = null
     var eglBase: EglBase? = null
@@ -42,9 +50,7 @@ class CallManager(private val context: Context) {
         audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         savedAudioMode = audioManager?.mode ?: AudioManager.MODE_NORMAL
         
-        if (eglBase == null) {
-            eglBase = EglBase.create()
-        }
+        if (eglBase == null) { eglBase = EglBase.create() }
         
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(context)
@@ -61,7 +67,7 @@ class CallManager(private val context: Context) {
     @SuppressLint("MissingPermission")
     fun startLocalVideoCapture(localView: SurfaceViewRenderer) {
         val ctx = eglBase?.eglBaseContext ?: return
-        val videoSource = factory?.createVideoSource(false)
+        videoSource = factory?.createVideoSource(false)
         videoCapturer = createCameraCapturer()
         val surfaceHelper = SurfaceTextureHelper.create("CaptureThread", ctx)
         videoCapturer?.initialize(surfaceHelper, context, videoSource?.capturerObserver)
@@ -69,17 +75,16 @@ class CallManager(private val context: Context) {
         localVideoTrack = factory?.createVideoTrack("video0", videoSource)
         localVideoTrack?.addSink(localView)
         localStream?.addTrack(localVideoTrack)
+        
+        // Save sender for screen share replacement
+        videoSender = peerConnection?.senders?.find { it.track()?.kind() == MediaStreamTrack.VIDEO_TRACK_KIND }
     }
-    
+
     fun startLocalAudio() {
         val audioConstraints = MediaConstraints().apply {
             mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
             mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "true"))
             mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl", "true"))
-            mandatory.add(MediaConstraints.KeyValuePair("googHighpassFilter", "true"))
-            mandatory.add(MediaConstraints.KeyValuePair("googAudioMirroring", "false"))
-            mandatory.add(MediaConstraints.KeyValuePair("googDAEchoCancellation", "true"))
-            mandatory.add(MediaConstraints.KeyValuePair("googTypingNoiseDetection", "true"))
         }
         val audioSource = factory?.createAudioSource(audioConstraints)
         localAudioTrack = factory?.createAudioTrack("audio0", audioSource)
@@ -97,6 +102,62 @@ class CallManager(private val context: Context) {
         return enumerator.deviceNames
             .firstOrNull { enumerator.isFrontFacing(it) }
             ?.let { enumerator.createCapturer(it, null) }
+    }
+
+    // --- Screen Share Logic ---
+    fun startScreenShare(data: Intent) {
+        if (isScreenSharing) return
+        
+        val ctx = eglBase?.eglBaseContext ?: return
+        
+        // Stop and Save Camera
+        videoCapturer?.stopCapture()
+        savedCapturer = videoCapturer
+        savedVideoSource = videoSource
+        
+        // Start Screen Capture
+        val screenCapturer = ScreenCapturerAndroid(data, MediaProjection.Callback {})
+        val surfaceHelper = SurfaceTextureHelper.create("ScreenShareThread", ctx)
+        videoSource = factory?.createVideoSource(true)
+        screenCapturer.initialize(surfaceHelper, context, videoSource?.capturerObserver)
+        screenCapturer.startCapture(1280, 720, 30)
+        videoCapturer = screenCapturer
+        
+        // Update Track
+        localVideoTrack?.dispose()
+        localVideoTrack = factory?.createVideoTrack("screenTrack", videoSource)
+        
+        // Replace track in sender
+        videoSender?.replaceTrack(localVideoTrack)
+        
+        isScreenSharing = true
+        Log.d("CallManager", "Screen Share Started")
+    }
+
+    fun stopScreenShare(localView: SurfaceViewRenderer) {
+        if (!isScreenSharing) return
+        
+        // Stop screen capture
+        videoCapturer?.stopCapture()
+        videoCapturer?.dispose()
+        
+        // Restore Camera
+        val ctx = eglBase?.eglBaseContext ?: return
+        videoSource = savedVideoSource ?: factory?.createVideoSource(false)
+        videoCapturer = savedCapturer
+        
+        val surfaceHelper = SurfaceTextureHelper.create("CaptureThread", ctx)
+        videoCapturer?.initialize(surfaceHelper, context, videoSource?.capturerObserver)
+        videoCapturer?.startCapture(1280, 720, 30)
+        
+        localVideoTrack = factory?.createVideoTrack("video0", videoSource)
+        localVideoTrack?.addSink(localView)
+        
+        // Replace track in sender
+        videoSender?.replaceTrack(localVideoTrack)
+        
+        isScreenSharing = false
+        Log.d("CallManager", "Screen Share Stopped, Camera Resumed")
     }
 
     fun joinRoom(roomId: String) {
@@ -179,7 +240,7 @@ class CallManager(private val context: Context) {
                     onRemoteStream?.invoke(track)
                 }
             }
-            
+
             override fun onSignalingChange(state: PeerConnection.SignalingState?) {}
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
                 if (state == PeerConnection.IceConnectionState.DISCONNECTED || state == PeerConnection.IceConnectionState.CLOSED) {
@@ -197,7 +258,10 @@ class CallManager(private val context: Context) {
 
         localStream?.let { stream ->
             stream.audioTracks.forEach { peerConnection?.addTrack(it) }
-            stream.videoTracks.forEach { peerConnection?.addTrack(it) }
+            stream.videoTracks.forEach {
+                peerConnection?.addTrack(it)
+                videoSender = peerConnection?.senders?.find { sender -> sender.track()?.id() == it.id() }
+            }
         }
     }
 
@@ -238,7 +302,7 @@ class CallManager(private val context: Context) {
     fun toggleMute(mute: Boolean) { localAudioTrack?.setEnabled(!mute) }
     fun toggleCamera(off: Boolean) { localVideoTrack?.setEnabled(!off) }
     fun switchCamera() { (videoCapturer as? CameraVideoCapturer)?.switchCamera(null) }
-    
+
     private fun setupAudio(isVideoCall: Boolean) {
         audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
         
@@ -299,6 +363,8 @@ class CallManager(private val context: Context) {
         
         videoCapturer?.stopCapture()
         videoCapturer?.dispose()
+        savedCapturer?.dispose()
+        
         peerConnection?.close()
         socket?.disconnect()
         onCallEnded?.invoke()
