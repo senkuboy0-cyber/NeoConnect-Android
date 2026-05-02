@@ -7,6 +7,7 @@ import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.media.projection.MediaProjection
 import android.os.Build
 import android.util.Log
 import org.json.JSONObject
@@ -53,9 +54,7 @@ class CallManager(private val context: Context) {
         if (eglBase == null) { eglBase = EglBase.create() }
         
         PeerConnectionFactory.initialize(
-            PeerConnectionFactory.InitializationOptions.builder(context)
-                .setEnableInternalTracer(true)
-                .createInitializationOptions()
+            PeerConnectionFactory.InitializationOptions.builder(context).setEnableInternalTracer(true).createInitializationOptions()
         )
 
         factory = PeerConnectionFactory.builder()
@@ -70,8 +69,10 @@ class CallManager(private val context: Context) {
         videoSource = factory?.createVideoSource(false)
         videoCapturer = createCameraCapturer()
         val surfaceHelper = SurfaceTextureHelper.create("CaptureThread", ctx)
+        
         videoCapturer?.initialize(surfaceHelper, context, videoSource?.capturerObserver)
         videoCapturer?.startCapture(1280, 720, 30)
+        
         localVideoTrack = factory?.createVideoTrack("video0", videoSource)
         localVideoTrack?.addSink(localView)
         localStream?.addTrack(localVideoTrack)
@@ -99,9 +100,7 @@ class CallManager(private val context: Context) {
 
     private fun createCameraCapturer(): VideoCapturer? {
         val enumerator = Camera2Enumerator(context)
-        return enumerator.deviceNames
-            .firstOrNull { enumerator.isFrontFacing(it) }
-            ?.let { enumerator.createCapturer(it, null) }
+        return enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) }?.let { enumerator.createCapturer(it, null) }
     }
 
     // --- Screen Share Logic ---
@@ -164,12 +163,8 @@ class CallManager(private val context: Context) {
         socket = io.socket.client.IO.socket(SERVER_URL)
         socket?.connect()
 
-        socket?.on(io.socket.client.Socket.EVENT_CONNECT) {
-            socket?.emit("join-room", roomId)
-        }
-
+        socket?.on(io.socket.client.Socket.EVENT_CONNECT) { socket?.emit("join-room", roomId) }
         socket?.on("waiting") { onWaiting?.invoke() }
-
         socket?.on("ready") { args ->
             val data = args[0] as JSONObject
             otherUserId = data.getString("otherUserId")
@@ -179,40 +174,24 @@ class CallManager(private val context: Context) {
             if (shouldCreateOffer) createOffer()
             onConnected?.invoke()
         }
-
         socket?.on("offer") { args ->
             val data = args[0] as JSONObject
             otherUserId = data.getString("from")
             val offer = data.getJSONObject("offer")
             createPeerConnection()
-            peerConnection?.setRemoteDescription(
-                SimpleSdpObserver(),
-                SessionDescription(SessionDescription.Type.OFFER, offer.getString("sdp"))
-            )
+            peerConnection?.setRemoteDescription(SimpleSdpObserver(), SessionDescription(SessionDescription.Type.OFFER, offer.getString("sdp")))
             createAnswer()
         }
-
         socket?.on("answer") { args ->
             val data = args[0] as JSONObject
             val answer = data.getJSONObject("answer")
-            peerConnection?.setRemoteDescription(
-                SimpleSdpObserver(),
-                SessionDescription(SessionDescription.Type.ANSWER, answer.getString("sdp"))
-            )
+            peerConnection?.setRemoteDescription(SimpleSdpObserver(), SessionDescription(SessionDescription.Type.ANSWER, answer.getString("sdp")))
         }
-
         socket?.on("ice-candidate") { args ->
             val data = args[0] as JSONObject
             val candidate = data.getJSONObject("candidate")
-            peerConnection?.addIceCandidate(
-                IceCandidate(
-                    candidate.getString("sdpMid"),
-                    candidate.getInt("sdpMLineIndex"),
-                    candidate.getString("candidate")
-                )
-            )
+            peerConnection?.addIceCandidate(IceCandidate(candidate.getString("sdpMid"), candidate.getInt("sdpMLineIndex"), candidate.getString("candidate")))
         }
-
         socket?.on("end-call") { endCall() }
         socket?.on(io.socket.client.Socket.EVENT_DISCONNECT) { onCallEnded?.invoke() }
     }
@@ -223,16 +202,11 @@ class CallManager(private val context: Context) {
         
         peerConnection = factory?.createPeerConnection(config, object : PeerConnection.Observer {
             override fun onIceCandidate(candidate: IceCandidate) {
-                val json = JSONObject()
-                json.put("to", otherUserId)
+                val json = JSONObject(); json.put("to", otherUserId)
                 val c = JSONObject()
-                c.put("sdpMid", candidate.sdpMid)
-                c.put("sdpMLineIndex", candidate.sdpMLineIndex)
-                c.put("candidate", candidate.sdp)
-                json.put("candidate", c)
-                socket?.emit("ice-candidate", json)
+                c.put("sdpMid", candidate.sdpMid); c.put("sdpMLineIndex", candidate.sdpMLineIndex); c.put("candidate", candidate.sdp)
+                json.put("candidate", c); socket?.emit("ice-candidate", json)
             }
-
             override fun onAddTrack(receiver: RtpReceiver?, streams: Array<MediaStream>?) {
                 val track = receiver?.track() ?: return
                 if (track is VideoTrack) {
@@ -240,25 +214,19 @@ class CallManager(private val context: Context) {
                     onRemoteStream?.invoke(track)
                 }
             }
-
             override fun onSignalingChange(state: PeerConnection.SignalingState?) {}
-            override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
-                if (state == PeerConnection.IceConnectionState.DISCONNECTED || state == PeerConnection.IceConnectionState.CLOSED) {
-                    onCallEnded?.invoke()
-                }
-            }
+            override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) { if (state == PeerConnection.IceConnectionState.DISCONNECTED || state == PeerConnection.IceConnectionState.CLOSED) onCallEnded?.invoke() }
             override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {}
             override fun onIceCandidatesRemoved(candidates: Array<IceCandidate>?) {}
             override fun onAddStream(stream: MediaStream?) {}
             override fun onRemoveStream(stream: MediaStream?) {}
             override fun onDataChannel(channel: DataChannel?) {}
             override fun onRenegotiationNeeded() {}
-            override fun onIceConnectionReceivingChange(receiving: Boolean) {}
         })
 
         localStream?.let { stream ->
             stream.audioTracks.forEach { peerConnection?.addTrack(it) }
-            stream.videoTracks.forEach {
+            stream.videoTracks.forEach { 
                 peerConnection?.addTrack(it)
                 videoSender = peerConnection?.senders?.find { sender -> sender.track()?.id() == it.id() }
             }
@@ -270,13 +238,10 @@ class CallManager(private val context: Context) {
             override fun onCreateSuccess(sdp: SessionDescription?) {
                 sdp?.let {
                     peerConnection?.setLocalDescription(SimpleSdpObserver(), it)
-                    val json = JSONObject()
-                    json.put("to", otherUserId)
+                    val json = JSONObject(); json.put("to", otherUserId)
                     val offer = JSONObject()
-                    offer.put("type", it.type.canonicalForm())
-                    offer.put("sdp", it.description)
-                    json.put("offer", offer)
-                    socket?.emit("offer", json)
+                    offer.put("type", it.type.canonicalForm()); offer.put("sdp", it.description)
+                    json.put("offer", offer); socket?.emit("offer", json)
                 }
             }
         }, MediaConstraints())
@@ -287,13 +252,10 @@ class CallManager(private val context: Context) {
             override fun onCreateSuccess(sdp: SessionDescription?) {
                 sdp?.let {
                     peerConnection?.setLocalDescription(SimpleSdpObserver(), it)
-                    val json = JSONObject()
-                    json.put("to", otherUserId)
+                    val json = JSONObject(); json.put("to", otherUserId)
                     val answer = JSONObject()
-                    answer.put("type", it.type.canonicalForm())
-                    answer.put("sdp", it.description)
-                    json.put("answer", answer)
-                    socket?.emit("answer", json)
+                    answer.put("type", it.type.canonicalForm()); answer.put("sdp", it.description)
+                    json.put("answer", answer); socket?.emit("answer", json)
                 }
             }
         }, MediaConstraints())
@@ -302,47 +264,32 @@ class CallManager(private val context: Context) {
     fun toggleMute(mute: Boolean) { localAudioTrack?.setEnabled(!mute) }
     fun toggleCamera(off: Boolean) { localVideoTrack?.setEnabled(!off) }
     fun switchCamera() { (videoCapturer as? CameraVideoCapturer)?.switchCamera(null) }
-
+    
     private fun setupAudio(isVideoCall: Boolean) {
         audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
-        
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val devices = audioManager?.availableCommunicationDevices
             val speakerDevice = devices?.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
             val earDevice = devices?.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
-            if (isVideoCall) {
-                speakerDevice?.let { audioManager?.setCommunicationDevice(it) }
-            } else {
-                earDevice?.let { audioManager?.setCommunicationDevice(it) }
-            }
-        } else {
-            @Suppress("DEPRECATION")
-            audioManager?.isSpeakerphoneOn = isVideoCall
-        }
+            if (isVideoCall) { speakerDevice?.let { audioManager?.setCommunicationDevice(it) } }
+            else { earDevice?.let { audioManager?.setCommunicationDevice(it) } }
+        } else { @Suppress("DEPRECATION") audioManager?.isSpeakerphoneOn = isVideoCall }
         setAudioFocus(true)
     }
 
     fun enableSpeaker(enable: Boolean) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val devices = audioManager?.availableCommunicationDevices
-            val device = if (enable) {
-                devices?.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
-            } else {
-                devices?.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
-            }
+            val device = if (enable) devices?.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+            else devices?.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
             device?.let { audioManager?.setCommunicationDevice(it) }
-        } else {
-            @Suppress("DEPRECATION")
-            audioManager?.isSpeakerphoneOn = enable
-        }
+        } else { @Suppress("DEPRECATION") audioManager?.isSpeakerphoneOn = enable }
     }
 
     private fun setAudioFocus(enable: Boolean) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (enable) {
-                audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                    .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION).build())
-                    .build()
+                audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION).build()).build()
                 audioManager?.requestAudioFocus(audioFocusRequest!!)
             } else { audioFocusRequest?.let { audioManager?.abandonAudioFocusRequest(it) } }
         } else {
@@ -354,19 +301,14 @@ class CallManager(private val context: Context) {
 
     fun endCall() {
         setAudioFocus(false)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            audioManager?.clearCommunicationDevice()
-        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) { audioManager?.clearCommunicationDevice() }
         audioManager?.mode = savedAudioMode
-        @Suppress("DEPRECATION")
-        audioManager?.isSpeakerphoneOn = false
+        @Suppress("DEPRECATION") audioManager?.isSpeakerphoneOn = false
         
-        videoCapturer?.stopCapture()
-        videoCapturer?.dispose()
+        videoCapturer?.stopCapture(); videoCapturer?.dispose()
         savedCapturer?.dispose()
         
-        peerConnection?.close()
-        socket?.disconnect()
+        peerConnection?.close(); socket?.disconnect()
         onCallEnded?.invoke()
     }
 }
